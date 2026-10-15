@@ -19,20 +19,21 @@ async function start() {
   const grid=new THREE.GridHelper(8,32,0x749584,0x9bb7a3);grid.position.y=.038;scene.add(grid);
   const camera=new THREE.PerspectiveCamera(38,1,.1,50);camera.position.set(2,1.9,-3.5);
   const controls=new OrbitControls(camera,canvas);controls.target.set(0,.95,0);controls.enableDamping=true;controls.minDistance=1.5;controls.maxDistance=8;controls.maxPolarAngle=Math.PI*.49;controls.update();
-  const actors={player:createAthlete('player',0,0),cpu:createAthlete('cpu',0,0)};
-  scene.add(actors.player.group,actors.cpu.group);
+  const actors={player:createAthlete('player',0,0),classic:createAthlete('player',0,0,'classic'),cpu:createAthlete('cpu',0,0)};
+  scene.add(actors.player.group,actors.classic.group,actors.cpu.group);
   const ball=new THREE.Mesh(new THREE.SphereGeometry(.045,16,12),new THREE.MeshStandardMaterial({color:0xffe629,emissive:0x4c3900}));scene.add(ball);
   const motion=new SwingMotion(); let progress=0,playing=true,profile=SWING_PROFILES[0];
   const team=()=>input<HTMLSelectElement>('team').value as AthleteTeam;
+  const selectedActor=()=>team()==='cpu'?actors.cpu:input<HTMLSelectElement>('player-style').value==='classic'?actors.classic:actors.player;
   function reset() {
     profile=SWING_PROFILES.find(p=>p.id===select.value)!;progress=0;
-    const actor=actors[team()],target=new THREE.Vector3(profile.hand==='forehand'?.35:-.35,Number(input<HTMLInputElement>('height').value),-.55);
+    const actor=selectedActor(),target=new THREE.Vector3(profile.hand==='forehand'?.35:-.35,Number(input<HTMLInputElement>('height').value),-.55);
     motion.begin(actor.group.position,target,0,profile.kind==='dink'?'dink':'drive',profile.kind==='volley');
     motion.aimAt(actor.group.position,new THREE.Vector3(Number(input<HTMLInputElement>('aim').value),0,-5),0);
     ball.position.copy(target);
   }
   const syncPlay=()=>input<HTMLButtonElement>('play').textContent=playing?'일시정지':'재생';
-  select.addEventListener('change',reset);input('team').addEventListener('change',reset);
+  select.addEventListener('change',reset);input('team').addEventListener('change',()=>{input<HTMLSelectElement>('player-style').disabled=team()==='cpu';reset();});input('player-style').addEventListener('change',reset);
   input('play').addEventListener('click',()=>{playing=!playing;syncPlay();});
   input('replay').addEventListener('click',()=>{reset();playing=true;syncPlay();});
   input('impact').addEventListener('click',()=>{progress=.5;playing=false;syncPlay();});
@@ -44,11 +45,11 @@ async function start() {
     const dt=document.hidden?0:Math.min(clock.getDelta(),.05);
     if(playing) {progress+=dt*Number(input<HTMLSelectElement>('speed').value)/(profile.kind==='drive'?1.3:profile.kind==='dink'?1.1:.8);if(progress>=1){if(input<HTMLInputElement>('loop').checked)reset();else{progress=1;playing=false;syncPlay();}}}
     motion.active=progress<1;motion.age=progress<.5?progress*2*motion.contactAt:motion.contactAt+(progress-.5)*2*motion.finishTime;
-    for(const name of ['player','cpu'] as const){actors[name].group.visible=name===team();if(name===team())animateAthlete(actors[name],{motion,walking:false,phase:0,swingLeft:0,shot:motion.shot,lateral:0,side:motion.hand==='forehand'?1:-1,ready:true,dt:playing?dt:0,time:0,reduceMotion:false});}
+    for(const actor of Object.values(actors)){actor.group.visible=actor===selectedActor();if(actor.group.visible)animateAthlete(actor,{motion,walking:false,phase:0,swingLeft:0,shot:motion.shot,lateral:0,side:motion.hand==='forehand'?1:-1,ready:true,dt:playing?dt:0,time:0,reduceMotion:false});}
     input<HTMLInputElement>('progress').value=String(Math.round(progress*1000));input('progress-label').textContent=Math.round(progress*100)+'%';
-    const actor=actors[team()];actor.group.updateWorldMatrix(true,true);const face=actor.paddle.localToWorld(new THREE.Vector3(0,-.34,0));
+    const actor=selectedActor();actor.group.updateWorldMatrix(true,true);const face=actor.paddle.localToWorld(new THREE.Vector3(0,-.34,0));
     input('phase').textContent=progress<.33?'준비 · 체중 싣기':progress<.49?'회전 · 패들 가속':progress<.52?`임팩트 · 접촉 오차 ${(face.distanceTo(ball.position)*100).toFixed(1)}cm`:progress<.83?'마무리 · 감속':'준비 자세로 복귀';
-    canvas.dataset.swing=profile.id;canvas.dataset.progress=progress.toFixed(4);canvas.dataset.contactError=face.distanceTo(ball.position).toFixed(5);canvas.dataset.ready='true';
+    canvas.dataset.style=actor.style;canvas.dataset.swing=profile.id;canvas.dataset.progress=progress.toFixed(4);canvas.dataset.contactError=face.distanceTo(ball.position).toFixed(5);canvas.dataset.ready='true';
     const w=canvas.clientWidth,h=canvas.clientHeight;if(canvas.width!==Math.round(w*renderer.getPixelRatio())||canvas.height!==Math.round(h*renderer.getPixelRatio())){renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
     controls.update();renderer.render(scene,camera);
   });

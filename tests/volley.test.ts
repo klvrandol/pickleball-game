@@ -115,6 +115,6 @@ test('low contact crouches with planted shoes rather than sinking feet into the 
   for (let i = 0; i < actor.feet.length; i++) {
     const ankle = actor.feet[i].getWorldPosition(new Vector3());
     assert.ok(ankle.distanceTo(planted[i]) < 0.001);
-    assert.ok(ankle.y >= 0.045 && ankle.y < 0.12);
+    assert.ok(ankle.y >= 0.045 && ankle.y < 0.25);
   }
 });

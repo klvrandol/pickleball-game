@@ -9,7 +9,7 @@ function skins(actor: ReturnType<typeof createAthlete>) {
   const result: SkinnedMesh[] = []; actor.model.traverse(o => { if (o instanceof SkinnedMesh) result.push(o); }); return result;
 }
 test('the replacement GLB has a weighted human mesh, complete rig, and a small render budget', () => {
-  const actor = createAthlete('player', 0, 0), size = new Box3().setFromObject(actor.model).getSize(new Vector3());
+  const actor = createAthlete('player', 0, 0, 'classic'), size = new Box3().setFromObject(actor.model).getSize(new Vector3());
   assert.ok(size.y > 1.7 && size.y < 2); assert.ok(size.x < 0.85);
   const meshes = skins(actor); assert.ok(meshes.length >= 1 && meshes.length < 12);
   const bones = meshes[0].skeleton.bones; assert.ok(bones.length >= 25);
@@ -22,7 +22,7 @@ test('the replacement GLB has a weighted human mesh, complete rig, and a small r
   assert.ok(triangles < 15000); assert.ok(actor.actions.Man_Idle && actor.actions.Man_Walk && actor.actions.Man_Run);
 });
 test('players share geometry but have independent skeletons and blue/red sports materials', () => {
-  const p = createAthlete('player', 3, 0), c = createAthlete('cpu', -3, Math.PI);
+  const p = createAthlete('player', 3, 0, 'classic'), c = createAthlete('cpu', -3, Math.PI);
   const pm = skins(p), cm = skins(c); assert.equal(pm[0].geometry, cm[0].geometry);
   assert.notEqual(pm[0].skeleton.bones[0].uuid, cm[0].skeleton.bones[0].uuid);
   function shirt(a: typeof p) { let material: import('three').MeshStandardMaterial | undefined;

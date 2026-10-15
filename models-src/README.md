@@ -28,3 +28,17 @@ blender -b models-src/Quaternius_Smooth_Male_Casual.blend --python tools/export-
 The script keeps the artist's mesh, original vertex weights and full rig, samples the source IK constraints into Idle/Walk/Run skeletal animation tracks, converts axes/units for a 1.85 m player, exports material colors, and separates the source shoe faces from their shared dark-eye palette into the existing Shoes material slot. Runtime code recolors uniforms/skin/hair and attaches a pickleball paddle to Palm.R. No third-party paid tools, services or runtime CDN are required. Blender export warnings about >4 weights describe normalization to the four strongest skin weights supported by this export; skin deformation is checked in tests and browser rendering.
 
 The GLB is about 837 KiB and includes all skin/animation buffers. `src/athlete-model.ts` loads this file once, validates skin data and required rig/animation features, and clones the skeleton per player. `tests/athlete.test.ts` checks actual vertex deformation, independent rigs, material colors, bounded geometry and stable repeated contact poses.
+
+## Experimental SD player (separate original model)
+
+`assets/athlete-sd.glb` is an original prototype generated from an empty Blender scene by `tools/build-sd-athlete.py`. It does not reshape or reuse the Quaternius mesh. Only the semantic joint names are compatible with the existing game animation adapter. The original `assets/athlete.glb` remains the CPU/classic comparison model with its CC0 provenance above.
+
+The SD model has a sculpted section-based head/jersey, short tapered jointed limbs, wide trainers, facial features and cap; approximately 3-head proportions; a 29-joint skinning rig and Idle/Walk/Run skeletal clips. Joint deformation is intentionally basic for this prototype. The game creates a paddle 18% larger and retargets the six existing swing profiles into a separate SD clip cache.
+
+Rebuild the SD model from the repository root:
+
+```sh
+blender -b --python tools/build-sd-athlete.py
+```
+
+Blender is a development-only tool. The generated GLB is included in the game build and requires no additional user download or paid service.
