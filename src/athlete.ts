@@ -1,16 +1,20 @@
 import * as THREE from 'three';
 import { cloneAthleteModel } from './athlete-model.ts';
 import { contactBodyOffset } from './volley.ts';
+import { SWING_PROFILES, sampleSwingKey, swingProfile, type SwingId, type SwingKey } from './swing-keyframes.ts';
 import { swingPose, type SwingMotion } from './swing.ts';
 import type { Shot } from './ball.ts';
 
 export type AthleteTeam = 'player' | 'cpu';
+interface RigTrack { bone: THREE.Bone; property: 'position' | 'quaternion'; sampler: THREE.Interpolant }
 export interface Athlete {
   team: AthleteTeam; group: THREE.Group; model: THREE.Object3D;
   body: THREE.Bone; chest: THREE.Bone; head: THREE.Bone;
   legs: THREE.Bone[]; knees: THREE.Bone[]; feet: THREE.Bone[];
   arms: THREE.Bone[]; elbows: THREE.Bone[]; wrists: THREE.Bone[];
   footHome: THREE.Vector3[];
+  swingRig?: { clips: Record<SwingId, THREE.AnimationClip>; tracks: Record<SwingId, RigTrack[]> };
+  footLock?: { serial: number; points: THREE.Vector3[]; moving: boolean };
   paddle: THREE.Group; mixer: THREE.AnimationMixer;
   actions: Record<string, THREE.AnimationAction>;
   bind: Map<THREE.Bone, { position: THREE.Vector3; quaternion: THREE.Quaternion }>;
@@ -72,14 +76,16 @@ export function createAthlete(team: AthleteTeam, z: number, facing: number): Ath
   bat.scale.setScalar(1 / worldScale); bat.position.y = 0.07 / worldScale; bat.rotation.z = Math.PI;
   group.updateMatrixWorld(true);
   model.traverse(object => { if (object instanceof THREE.SkinnedMesh) { object.skeleton.update(); object.computeBoundingBox(); } });
-  return { team, group, model, footHome: [bone('Foot.L').position.clone(), bone('Foot.R').position.clone()], body: bone('Body'), chest: bone('Torso'), head: bone('Head'),
+  const actor: Athlete = { team, group, model, footHome: [bone('Foot.L').position.clone(), bone('Foot.R').position.clone()], body: bone('Body'), chest: bone('Torso'), head: bone('Head'),
     legs: [bone('UpperLeg.L'), bone('UpperLeg.R')], knees: [bone('LowerLeg.L'), bone('LowerLeg.R')],
     feet: [bone('Foot.L'), bone('Foot.R')], arms: [bone('UpperArm.L'), bone('UpperArm.R')],
     elbows: [bone('LowerArm.L'), bone('LowerArm.R')], wrists, paddle: bat, mixer, actions, bind };
+  actor.swingRig = createSwingRig(actor);
+  return actor;
 }
 
 export interface AthletePose {
-  motion?: SwingMotion; contact?: THREE.Vector3; contactBlend?: number;
+  motion?: SwingMotion; incoming?: { ball: THREE.Vector3; volley: boolean; shot: Shot }; contact?: THREE.Vector3; contactBlend?: number;
   walking: boolean; phase: number; swingLeft: number; shot: Shot;
   lateral: number; forward?: number; side: number; ready: boolean; dt: number; time: number; reduceMotion: boolean;
 }
@@ -91,7 +97,7 @@ function aimBone(bone: THREE.Bone, current: THREE.Vector3, desired: THREE.Vector
   if (current.lengthSq() < 1e-10 || desired.lengthSq() < 1e-10) return;
   const delta = new THREE.Quaternion().setFromUnitVectors(current.normalize(), desired.normalize());
   const world = delta.multiply(bone.getWorldQuaternion(new THREE.Quaternion()));
-  bone.quaternion.copy(bone.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(world));
+  bone.quaternion.copy(bone.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(world)).normalize();
   bone.updateWorldMatrix(false, true);
 }
 function offsetBone(actor: Athlete, bone: THREE.Bone, offset: THREE.Vector3) {
@@ -122,25 +128,29 @@ function plantedLegs(actor: Athlete, targets: THREE.Vector3[], lengths: number[]
 }
 
 /** Layer racket contact IK over the GLB's native locomotion and skin weights. */
-export function posePaddleContact(actor: Athlete, target: THREE.Vector3, hand = 1, _clampReach = false) {
+export function posePaddleContact(actor: Athlete, target: THREE.Vector3, hand = 1, _clampReach = false, wristPose = new THREE.Quaternion(), armOnly = false) {
   actor.group.updateWorldMatrix(true, true);
   const targets = actor.feet.map(position);
   const lengths = actor.legs.map((hip, i) => [position(hip).distanceTo(position(actor.knees[i])), position(actor.knees[i]).distanceTo(targets[i])]);
   const relative = actor.group.worldToLocal(target.clone());
   const offset = contactBodyOffset(relative);
-  offsetBone(actor, actor.body, new THREE.Vector3(0, offset.y, 0));
-  offsetBone(actor, actor.chest, new THREE.Vector3(offset.x, 0, offset.z));
-  plantedLegs(actor, targets, lengths);
+  if (!armOnly) {
+    offsetBone(actor, actor.body, new THREE.Vector3(0, offset.y, 0));
+    offsetBone(actor, actor.chest, new THREE.Vector3(offset.x, 0, offset.z));
+    plantedLegs(actor, targets, lengths);
+  }
   const arm = actor.arms[1], elbow = actor.elbows[1], wrist = actor.wrists[1];
   const origin = position(arm), joint = position(elbow);
   const upper = origin.distanceTo(joint);
-  const lower = joint.distanceTo(position(wrist)) + 0.07 + 0.34;
+  const scale = wrist.getWorldScale(new THREE.Vector3()).x;
+  const faceVector = new THREE.Vector3(0, .41 / scale, 0).applyQuaternion(wristPose).add(wrist.position);
+  const lower = faceVector.length() * scale;
   const pole = new THREE.Vector3(hand, -0.2, 0.35).applyQuaternion(actor.group.quaternion);
   const desired = elbowPoint(origin, target, upper, lower, pole);
   aimBone(arm, joint.sub(origin), desired.clone().sub(origin));
-  aimBone(elbow, Y.clone().applyQuaternion(elbow.getWorldQuaternion(new THREE.Quaternion())), target.clone().sub(position(elbow)));
+  aimBone(elbow, faceVector.clone().applyQuaternion(elbow.getWorldQuaternion(new THREE.Quaternion())), target.clone().sub(position(elbow)));
   // Wrist rotates independently; straight alignment keeps the face on the solved contact axis.
-  wrist.quaternion.identity(); wrist.updateWorldMatrix(false, true);
+  wrist.quaternion.copy(wristPose); wrist.updateWorldMatrix(false, true);
 }
 
 export function animateAthlete(actor: Athlete, pose: AthletePose) {
@@ -177,22 +187,137 @@ export function animateAthlete(actor: Athlete, pose: AthletePose) {
     }
   }
   // Curl the artist's skinned fingers around the paddle handle.
-  for (const [name, angle] of [['MiddleHandR', 0.4], ['FingersR', 0.7], ['Thumb1R', -0.35]] as const) {
+  for (const [name, angle] of [['MiddleHandR', 0.4], ['FingersR', 0.7], ['Thumb1R', -0.35], ['MiddleHandL', .18], ['FingersL', .32]] as const) {
     const finger = actor.model.getObjectByName(name); if (finger) finger.rotateX(angle);
   }
-  if (pose.motion?.active || pose.contact) {
-    const motion = pose.motion?.active ? swingPose(pose.motion, actor.team === 'cpu') : null;
-    const target = motion ? actor.group.localToWorld(motion.target.clone()) : pose.contact!;
-    const bones = [...actor.bind.keys()];
-    const before = bones.map(bone => ({ q: bone.quaternion.clone(), p: bone.position.clone() }));
-    if (motion) { actor.chest.rotateY(motion.twist); actor.head.rotateY(-motion.twist * 0.35); }
-    posePaddleContact(actor, target, motion?.hand ?? pose.side, true);
-    const weight = motion ? motion.recovery : pose.contactBlend ?? 1;
-    bones.forEach((bone, i) => {
-      bone.quaternion.slerpQuaternions(before[i].q, bone.quaternion.clone(), weight);
-      bone.position.lerpVectors(before[i].p, bone.position.clone(), weight);
+  const motion = pose.motion?.active ? pose.motion : null;
+  if (motion) {
+    const profile = swingProfile(motion.hand, motion.kind), time = motion.clipTime;
+    const ease = (v: number) => { const x = THREE.MathUtils.clamp(v, 0, 1); return x*x*(3-2*x); };
+    const weight = ease(time / .13) * ease((1-time) / .18);
+    actor.group.updateWorldMatrix(true, true);
+    const nativeFeet = actor.feet.map(position);
+    if (!actor.footLock || actor.footLock.serial !== motion.serial || actor.footLock.moving !== walking) {
+      actor.footLock = { serial: motion.serial, points: nativeFeet.map(p => p.clone()), moving: walking };
+    }
+    const feet = walking ? nativeFeet : actor.footLock.points.map(p => p.clone());
+    if (!walking) feet[motion.hand === 'forehand' ? 1 : 0].y += sampleSwingKey(profile, time).heel * weight;
+    const lengths = actor.legs.map((hip, i) => [position(hip).distanceTo(position(actor.knees[i])), position(actor.knees[i]).distanceTo(nativeFeet[i])]);
+    applySwingTracks(actor, profile.id, time, weight, walking);
+    const heightDrop = Math.min(.30, Math.max(0, 1.1-motion.contact.y)*.55)*weight;
+    offsetBone(actor, actor.body, new THREE.Vector3(0, -heightDrop, 0));
+    // Rotate the authored arm arc for high/low balls before the narrow impact correction.
+    actor.group.updateWorldMatrix(true, true);
+    const origin = position(actor.arms[1]);
+    const arc = actor.paddle.localToWorld(new THREE.Vector3(0,-.34,0)).sub(origin);
+    const adapted = arc.clone().add(new THREE.Vector3(0,(motion.contact.y-1.15+heightDrop)*.75*weight,0));
+    aimBone(actor.arms[1], arc, adapted);
+    actor.chest.rotateY(motion.aimYaw * weight * .45);
+    actor.head.rotateY(-motion.aimYaw * weight * .20);
+    actor.group.updateWorldMatrix(true, true);
+    // Foot targets stay grounded in a standing stroke. Moving strokes retain native gait targets.
+    actor.feet.forEach((foot, i) => {
+      foot.position.copy(foot.parent!.worldToLocal(feet[i].clone()));
+      foot.updateWorldMatrix(false, true);
     });
+    plantedLegs(actor, feet, lengths);
+    // IK is a narrow contact correction, not the source of the backswing/follow-through.
+    const contactWeight = time <= .5 ? ease((time-.37)/.13) : 1-ease((time-.5)/.13);
+    if (contactWeight > 0) {
+      const sample = sampleSwingKey(profile, time);
+      const wrist = new THREE.Quaternion().setFromEuler(new THREE.Euler(...sample.wrist));
+      const target = actor.group.localToWorld(swingPose(motion).target);
+      const joints = [actor.arms[1], actor.elbows[1], actor.wrists[1]];
+      const before = joints.map(bone => bone.quaternion.clone());
+      // A small visual torso reach accommodates off-centre contacts without moving gameplay feet.
+      const reach = contactBodyOffset(motion.contact);
+      offsetBone(actor, actor.chest, new THREE.Vector3(reach.x, 0, reach.z).multiplyScalar(contactWeight));
+      posePaddleContact(actor, target, motion.hand === 'forehand' ? 1 : -1, true, wrist, true);
+      joints.forEach((bone, i) => bone.quaternion.slerpQuaternions(before[i], bone.quaternion.clone(), contactWeight));
+    }
+  } else if (pose.contact) {
+    posePaddleContact(actor, pose.contact, pose.side);
+  } else if (pose.incoming) {
+    const local = actor.group.worldToLocal(pose.incoming.ball.clone());
+    const anticipation = swingProfile(local.x >= 0 ? 'forehand' : 'backhand', pose.incoming.volley ? 'volley' : pose.incoming.shot);
+    const proximity = THREE.MathUtils.clamp((2.5 - Math.hypot(local.x, local.z)) / 1.4, 0, 1);
+    applySwingTracks(actor, anticipation.id, .18, proximity*.32, walking);
   }
   actor.group.updateMatrixWorld(true);
   actor.model.traverse(object => { if (object instanceof THREE.SkinnedMesh) object.skeleton.update(); });
+}
+
+let cachedSwingClips: Record<SwingId, THREE.AnimationClip> | null = null;
+function restoreBase(actor: Athlete) {
+  for (const [bone, base] of actor.bind) { bone.position.copy(base.position); bone.quaternion.copy(base.quaternion); }
+  actor.group.updateWorldMatrix(true, true);
+}
+function authorPose(actor: Athlete, key: SwingKey, hand: number) {
+  const feet = actor.feet.map(position);
+  const lengths = actor.legs.map((hip, i) => [position(hip).distanceTo(position(actor.knees[i])), position(actor.knees[i]).distanceTo(feet[i])]);
+  actor.body.rotateY(key.chain[0]);
+  const spine = actor.model.getObjectByName('Abdomen')!; spine.rotateY(key.chain[1]);
+  actor.chest.rotateY(key.chain[2]);
+  actor.head.rotateY(-key.chain[1]*.32);
+  const shoulder = actor.model.getObjectByName('ShoulderR')!; shoulder.rotateY(key.chain[2]*.45);
+  offsetBone(actor, actor.body, new THREE.Vector3(key.lower[1], key.lower[0], key.lower[2]));
+  const wrist = new THREE.Quaternion().setFromEuler(new THREE.Euler(...key.wrist));
+  posePaddleContact(actor, actor.group.localToWorld(new THREE.Vector3(...key.paddle)), hand, true, wrist, true);
+  // Counterbalance with the free arm; backhands gather it in front before opening out.
+  const arm = actor.arms[0], elbow = actor.elbows[0], wristLeft = actor.wrists[0];
+  const support = actor.group.localToWorld(new THREE.Vector3(-.25+key.support*.18, 1.0+key.support*.25, -.10-key.support*.25));
+  const origin = position(arm), joint = position(elbow);
+  const freeElbow = elbowPoint(origin, support, origin.distanceTo(joint), joint.distanceTo(position(wristLeft)),
+    new THREE.Vector3(0,-1,.15).applyQuaternion(actor.group.quaternion));
+  aimBone(arm, joint.sub(origin), freeElbow.sub(origin));
+  aimBone(elbow, Y.clone().applyQuaternion(elbow.getWorldQuaternion(new THREE.Quaternion())), support.sub(position(elbow)));
+  wristLeft.rotateY(-key.support*.10);
+  feet.forEach((target, i) => {
+    target.y += i === (hand > 0 ? 1 : 0) ? key.heel : 0;
+    actor.feet[i].position.copy(actor.feet[i].parent!.worldToLocal(target.clone()));
+  });
+  plantedLegs(actor, feet, lengths);
+}
+function createSwingRig(actor: Athlete) {
+  if (!cachedSwingClips) {
+    const clips = {} as Record<SwingId, THREE.AnimationClip>;
+    for (const profile of SWING_PROFILES) {
+      const bones = [...actor.bind.keys()];
+      const values = bones.map(() => ({ q: [] as number[], p: [] as number[] }));
+      const times = Array.from({ length: 61 }, (_, i) => i / 60);
+      for (const time of times) {
+        restoreBase(actor);
+        if (time > 0 && time < 1) authorPose(actor, sampleSwingKey(profile, time), profile.hand === 'forehand' ? 1 : -1);
+        bones.forEach((bone, i) => {
+          const base = actor.bind.get(bone)!;
+          const q = base.quaternion.clone().invert().multiply(bone.quaternion);
+          values[i].q.push(...q.toArray()); values[i].p.push(...bone.position.clone().sub(base.position).toArray());
+        });
+      }
+      const tracks = bones.flatMap((bone, i) => [
+        new THREE.QuaternionKeyframeTrack(bone.name+'.quaternion', times, values[i].q),
+        new THREE.VectorKeyframeTrack(bone.name+'.position', times, values[i].p),
+      ]);
+      clips[profile.id] = new THREE.AnimationClip(profile.id, 1, tracks);
+    }
+    cachedSwingClips = clips;
+    restoreBase(actor);
+  }
+  const tracks = {} as Record<SwingId, RigTrack[]>;
+  for (const profile of SWING_PROFILES) tracks[profile.id] = cachedSwingClips[profile.id].tracks.map(track => {
+    const [name, property] = track.name.split('.');
+    return { bone: actor.model.getObjectByName(name) as THREE.Bone, property: property as 'position' | 'quaternion', sampler: track.InterpolantFactoryMethodLinear() };
+  });
+  return { clips: cachedSwingClips, tracks };
+}
+function applySwingTracks(actor: Athlete, id: SwingId, time: number, weight: number, moving: boolean) {
+  for (const track of actor.swingRig!.tracks[id]) {
+    const value = track.sampler.evaluate(time);
+    const lower = actor.legs.includes(track.bone) || actor.knees.includes(track.bone) || actor.feet.includes(track.bone);
+    const w = weight * (moving && lower ? .22 : 1) * (actor.team === 'cpu' ? .96 : 1);
+    if (track.property === 'quaternion') {
+      const delta = new THREE.Quaternion().fromArray(value).normalize();
+      track.bone.quaternion.multiply(new THREE.Quaternion().slerp(delta, w)).normalize();
+    } else track.bone.position.addScaledVector(new THREE.Vector3().fromArray(value), w);
+  }
 }

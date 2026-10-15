@@ -301,6 +301,7 @@ async function boot() {
     playerMotion.impact(player.group.position, ball.position, 0, volley);
     playerContact.copy(ball.position); contactPoseTime = 0.11;
     const target = aim.clone();
+    playerMotion.aimAt(player.group.position, target, 0);
     const distance = Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z);
     const error = Math.max(0, distance - 0.85) * 1.8 + Math.max(0, 0.45 - ball.position.y) * 2 +
       (shot === 'dink' ? Math.max(0, player.group.position.z - 3) * 0.15 : 0);
@@ -501,8 +502,8 @@ async function boot() {
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }
-    animateAthlete(player, { motion: playerMotion, contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, forward: playerVelocity.z, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
-    animateAthlete(opponent, { motion: cpu.motion, contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: cpu.moving ? cpu.destination.x - cpu.position.x : 0, forward: cpu.moving ? -(cpu.destination.z - cpu.position.z) : 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
+    animateAthlete(player, { motion: playerMotion, incoming: match.phase === 'rally' && match.receiver === 'player' ? { ball: ball.position, volley: match.hits >= 3 && ball.bounces === 0, shot: playerShot } : undefined, contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, forward: playerVelocity.z, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
+    animateAthlete(opponent, { motion: cpu.motion, incoming: match.phase === 'rally' && match.receiver === 'cpu' ? { ball: ball.position, volley: match.hits >= 3 && ball.bounces === 0, shot: cpu.position.z > -3.3 ? 'dink' : 'drive' } : undefined, contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: cpu.moving ? cpu.destination.x - cpu.position.x : 0, forward: cpu.moving ? -(cpu.destination.z - cpu.position.z) : 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
     trailTime += dt;
     if (trailTime >= 0.025) {
       trailTime = 0; trailPositions.copyWithin(0, 3); ball.position.toArray(trailPositions, (trailCount - 1) * 3);

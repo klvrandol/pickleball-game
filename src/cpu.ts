@@ -108,6 +108,7 @@ export class CpuPlayer {
       this.volley = volley ? volleyStyle(shot, ball.velocity.length(), ball.position.y) : undefined;
       this.status = missed ? '헛스윙' : volley ? (this.volley === 'soft' ? '부드러운 발리' : this.volley === 'block' ? '블록 발리' : '공격 발리') : shot === 'dink' ? '딩크' : '드라이브';
       this.motion.begin(this.position, ball.position, Math.PI, shot, volley, volley ? SWING_CONTACT_DELAY : 0);
+      this.motion.aimAt(this.position, new Vector3(x, 0, z), Math.PI);
       const reply = { shot, target: new Vector3(x, 0, z), missed, volley: this.volley };
       if (volley) { this.pending = { reply, remaining: SWING_CONTACT_DELAY }; return; }
       return reply;

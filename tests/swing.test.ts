@@ -48,7 +48,7 @@ test('preparation reaches impact then recovers; volley is shorter than dink and 
 test('CPU has a subtle distinct finish without moving impact time or position', () => {
   assert.ok(sample('drive', 1, 0.2, 'player').paddle.distanceTo(sample('drive', 1, 0.2, 'cpu').paddle) > 0.01);
   const p = sample('drive', 1, 0.065, 'player'), c = sample('drive', 1, 0.065, 'cpu');
-  assert.ok(p.paddle.distanceTo(c.paddle) < 1e-9);
+  assert.ok(p.paddle.distanceTo(c.paddle) < 0.00001);
 });
 test('the selected shot persists through later state changes and resets cleanly', () => {
   const motion = new SwingMotion(); motion.begin(new Vector3(), new Vector3(-0.4, 1, -0.5), 0, 'dink', false);

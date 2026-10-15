@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import type { Shot } from './ball.ts';
+import { sampleSwingKey, swingProfile } from './swing-keyframes.ts';
 import { SWING_CONTACT_DELAY } from './volley.ts';
 export type SwingHand = 'forehand' | 'backhand';
 export type SwingKind = Shot | 'volley';
@@ -8,6 +9,8 @@ export function swingHand(feet: Vector3, ball: Vector3, facing: number): SwingHa
 }
 /** Visual clock shares the existing contact delay; it never changes ball physics. */
 export class SwingMotion {
+  serial = 0;
+  aimYaw = 0;
   active = false;
   age = 0;
   contactAt = SWING_CONTACT_DELAY;
@@ -16,6 +19,7 @@ export class SwingMotion {
   shot: Shot = 'drive';
   contact = new Vector3();
   begin(feet: Vector3, ball: Vector3, facing: number, shot: Shot, volley: boolean, delay = SWING_CONTACT_DELAY) {
+    this.serial++; this.aimYaw = 0;
     this.active = true; this.age = 0; this.contactAt = delay; this.shot = shot;
     this.kind = volley ? 'volley' : shot; this.hand = swingHand(feet, ball, facing);
     this.capture(feet, ball, facing);
@@ -27,7 +31,15 @@ export class SwingMotion {
     this.capture(feet, ball, facing); this.kind = volley ? 'volley' : this.shot;
     this.age = this.contactAt;
   }
-  get finishTime() { return this.kind === 'drive' ? 0.40 : this.kind === 'dink' ? 0.34 : 0.21; }
+  aimAt(feet: Vector3, target: Vector3, facing: number) {
+    const local = target.clone().sub(feet).applyAxisAngle(new Vector3(0, 1, 0), -facing);
+    this.aimYaw = Math.max(-0.35, Math.min(0.35, Math.atan2(-local.x, -local.z)));
+  }
+  get finishTime() { return this.kind === 'drive' ? 0.58 : this.kind === 'dink' ? 0.46 : 0.30; }
+  get clipTime() {
+    return this.age < this.contactAt && this.contactAt > 0 ? this.age / this.contactAt * 0.5 :
+      0.5 + Math.min(1, Math.max(0, (this.age - this.contactAt) / this.finishTime)) * 0.5;
+  }
   advance(dt: number) {
     if (!this.active) return;
     this.age += dt;
@@ -36,20 +48,10 @@ export class SwingMotion {
   clear() { this.active = false; }
 }
 export function swingPose(motion: SwingMotion, cpu = false) {
-  const hand = motion.hand === 'forehand' ? 1 : -1;
-  const prepare = motion.contactAt > 0 && motion.age < motion.contactAt;
-  const t = prepare ? Math.max(0, motion.age / motion.contactAt) : Math.min(1, Math.max(0, (motion.age - motion.contactAt) / motion.finishTime));
-  // Preparation accelerates into impact; the follow-through eases out and returns to ready.
-  const amount = prepare ? (1 - t) ** 2 : Math.sin(Math.min(1, t * 1.65) * Math.PI / 2);
-  const recovery = prepare ? 1 : 1 - Math.max(0, (t - 0.55) / 0.45);
-  const drive = motion.kind === 'drive', dink = motion.kind === 'dink';
-  const scale = cpu ? 0.93 : 1;
-  const offset = new Vector3(
-    hand * (prepare ? (drive ? 0.42 : dink ? 0.13 : 0.08) : -(drive ? 0.58 : dink ? 0.16 : 0.09)),
-    prepare ? (drive ? -0.09 : -0.06) : drive ? 0.38 : dink ? 0.17 : 0.035,
-    prepare ? (drive ? 0.32 : dink ? 0.14 : 0.08) : -(drive ? 0.35 : dink ? 0.17 : motion.shot === 'dink' ? 0.12 : 0.19),
-  ).multiplyScalar(amount * scale);
-  return { target: motion.contact.clone().add(offset),
-    twist: hand * (prepare ? -1 : 1) * amount * (drive ? 0.30 : dink ? 0.10 : 0.055) * scale,
-    recovery, support: motion.hand === 'backhand' ? 0.85 : 0.25, hand };
+  const key = sampleSwingKey(swingProfile(motion.hand, motion.kind), motion.clipTime);
+  const canonical = new Vector3(motion.hand === 'forehand' ? .35 : -.35, 1.15, -.55);
+  const offset = new Vector3(...key.paddle).sub(canonical).multiplyScalar(cpu ? .93 : 1);
+  return { target: motion.contact.clone().add(offset), twist: key.chain[1],
+    recovery: motion.clipTime > .82 ? (1 - motion.clipTime) / .18 : 1,
+    support: key.support, hand: motion.hand === 'forehand' ? 1 : -1 };
 }
