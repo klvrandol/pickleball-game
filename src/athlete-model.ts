@@ -26,7 +26,7 @@ export function loadAthleteModel(): Promise<void> {
   if (templates.classic && templates.sd && templates.ranger) return Promise.resolve();
   return loading ??= Promise.all((['classic', 'sd', 'ranger'] as const).map(async style => {
     if (templates[style]) return;
-    const response = await fetch(style === 'ranger' ? './models/Ranger.glb' : style === 'sd' ? SD_MODEL_URL : ATHLETE_MODEL_URL);
+    const response = await fetch(style === 'ranger' ? './models/Ranger-sports.glb' : style === 'sd' ? SD_MODEL_URL : ATHLETE_MODEL_URL);
     if (!response.ok) throw new Error(`캐릭터 모델을 불러오지 못했습니다 (${response.status}).`);
     await installAthleteModel(await response.arrayBuffer(), style);
   })).then(() => {}).catch(error => { loading = null; throw error; });

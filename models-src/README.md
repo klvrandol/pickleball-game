@@ -58,3 +58,17 @@ There are no Quaternius-style shoulder/finger bones. Local bind rotations differ
 mounts the paddle at the right-hand socket, and uses a dedicated gait and world-space arm-chain IK.
 Existing authored swing **paddle paths and timing**, not Quaternius bone tracks, are reused.
 This is an appearance trial; authored KayKit-specific clips/retargeting and joint limits remain future work.
+
+
+### Ranger sports derivative
+
+`tools/build-ranger-sports.py` reads the preserved repository-root Ranger and exports only
+`public/models/Ranger-sports.glb`. Original source/runtime copy remain byte-identical.
+Cape/quiver are removed as independent objects. The source body combines tunic, scarf,
+belt and pouches: the garment shell is rebuilt as a jersey, separate shorts and trims.
+Leather arm cuffs and tall boot shafts are replaced with bare skin, sports bands and socks;
+original hands and low shoe surfaces retain their weights. The original head geometry, UV,
+material, armature and bind pose are retained. New clothes transfer normalized top-four
+weights from the corresponding original body/arm/leg surfaces.
+No Quaternius asset, gameplay envelope or camera configuration is changed.
+This derivative uses the original KayKit CC0 asset; new garment geometry is generated locally.

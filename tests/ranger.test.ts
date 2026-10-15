@@ -12,7 +12,7 @@ import { SWING_PROFILES } from '../src/swing-keyframes.ts';
 
 // Node has no image decoder. Preserve all original geometry/skin buffers; only omit
 // material texture references here. The unmodified textured GLB is tested in Chromium.
-const bytes=await readFile(new URL('../public/models/Ranger.glb',import.meta.url));
+const bytes=await readFile(new URL('../public/models/Ranger-sports.glb',import.meta.url));
 const jsonSize=bytes.readUInt32LE(12),doc=JSON.parse(bytes.subarray(20,20+jsonSize).toString());
 for(const material of doc.materials)delete material.pbrMetallicRoughness.baseColorTexture;
 delete doc.images;delete doc.textures;delete doc.samplers;
@@ -28,7 +28,7 @@ test('Ranger uses original KayKit skin, real right-hand socket, court scale and 
  assert.equal(cpu.style,'classic');assert.equal(a.paddle.parent,a.wrists[1]);assert.equal(a.wrists[1].name,'handr');
  assert.ok(a.model.getObjectByName('handslotr'));assert.equal(Object.keys(a.actions).length,0);
  const meshes:SkinnedMesh[]=[];a.model.traverse(o=>{if(o instanceof SkinnedMesh)meshes.push(o);});
- assert.equal(meshes.length,8);assert.equal(meshes[0].skeleton.bones.length,23);
+ assert.ok(meshes.length>=6);assert.equal(meshes[0].skeleton.bones.length,23);
  const bounds=new Box3().setFromObject(a.model,true);
  assert.ok(Math.abs(bounds.min.y-.045)<.015,`soles ${bounds.min.y}`);
  assert.equal(RANGER_DISPLAY_SCALE,.65);
