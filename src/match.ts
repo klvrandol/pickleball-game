@@ -48,6 +48,12 @@ export class SinglesMatch {
   get servePosition(): CourtPosition { return { x: this.serveX, z: endSign(this.server) * 7.3 }; }
   get serveTarget(): CourtPosition { return { x: -this.serveX, z: -endSign(this.server) * 4.8 }; }
 
+  serveLandingError(p: CourtPosition): string | undefined {
+    if (!inCourt(p)) return '아웃! 코트 안쪽을 조준하세요.';
+    if (p.z * endSign(this.server) >= 0) return '상대 서비스 코트를 조준하세요.';
+    if (Math.abs(p.z) <= KITCHEN + LINE_HALF) return '서브 폴트: 키친과 키친 라인은 서브 착지 불가입니다.';
+    if (p.x * Math.sign(this.serveTarget.x) < -LINE_HALF) return '서브 폴트: 대각선 서비스 코트에 넣어야 합니다.';
+  }
   drop() {
     if (this.phase !== 'ready' && this.phase !== 'drop') return false;
     this.phase = 'drop'; this.message = this.server === 'player' ? '드롭 서브: 바운드한 공을 왼쪽 클릭으로 치세요.' : 'CPU가 드롭 서브를 준비합니다.';
@@ -80,8 +86,8 @@ export class SinglesMatch {
     if (!inCourt(p)) { this.fault(this.lastHitter, '아웃!'); return; }
     if (p.z * endSign(this.receiver) <= 0) { this.fault(this.lastHitter, '공이 상대 코트에 도달하지 못했습니다.'); return; }
     if (this.serveLandingPending) {
-      if (Math.abs(p.z) <= KITCHEN + LINE_HALF) { this.fault(this.server, '서브 폴트: 키친과 키친 라인은 서브 착지 불가입니다.'); return; }
-      if (p.x * Math.sign(this.serveTarget.x) < -LINE_HALF) { this.fault(this.server, '서브 폴트: 대각선 서비스 코트에 넣어야 합니다.'); return; }
+      const error = this.serveLandingError(p);
+      if (error) { this.fault(this.server, error); return; }
       this.serveLandingPending = false;
     }
     this.bounceRequired[this.receiver] = false;

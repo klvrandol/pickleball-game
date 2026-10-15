@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import './style.css';
 import { CpuPlayer } from './cpu';
-import { SinglesMatch, endSign, inKitchen } from './match';
+import { GameAudio } from './audio';
+import { landingPoint, contactQuality, contactText } from './feedback';
+import { SinglesMatch, endSign, inKitchen, inCourt } from './match';
 import { PracticeBall, BALL_RADIUS, launchVelocity, shotVelocity, type Shot } from './ball';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#court')!;
@@ -70,29 +72,30 @@ function boot() {
     const group = new THREE.Group();
     group.position.set(0, 0.045, z);
     group.rotation.y = facing;
+    const body = new THREE.Group(); group.add(body);
     const torso = box(0.48, 0.59, 0.28, color, 0, 1.03);
-    group.add(torso);
+    body.add(torso);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 12), new THREE.MeshStandardMaterial({ color: 0xefc5a0 }));
-    head.position.y = 1.53; head.castShadow = true; group.add(head);
-    group.add(box(0.38, 0.09, 0.36, color, 0, 1.66));
-    group.add(box(0.38, 0.035, 0.19, color, 0, 1.63, -0.2));
-    group.add(box(0.45, 0.23, 0.3, 0x23434b, 0, 0.65));
+    head.position.y = 1.53; head.castShadow = true; body.add(head);
+    body.add(box(0.38, 0.09, 0.36, color, 0, 1.66));
+    body.add(box(0.38, 0.035, 0.19, color, 0, 1.63, -0.2));
+    body.add(box(0.45, 0.23, 0.3, 0x23434b, 0, 0.65));
     const legs = [-1, 1].map(side => {
       const pivot = new THREE.Group(); pivot.position.set(side * 0.13, 0.6, 0);
       pivot.add(box(0.14, 0.45, 0.16, 0xefc5a0, 0, -0.22));
       pivot.add(box(0.19, 0.12, 0.32, 0xf8f6e8, 0, -0.5, -0.055));
-      group.add(pivot); return pivot;
+      body.add(pivot); return pivot;
     });
     const arms = [-1, 1].map(side => {
       const pivot = new THREE.Group(); pivot.position.set(side * 0.31, 1.25, 0);
       pivot.add(box(0.13, 0.43, 0.14, 0xefc5a0, 0, -0.21));
-      group.add(pivot); return pivot;
+      body.add(pivot); return pivot;
     });
     const paddle = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.035, 20), new THREE.MeshStandardMaterial({ color: 0x173d45 }));
     paddle.rotation.x = Math.PI / 2; paddle.scale.z = 1.25; paddle.position.set(0, -0.61, -0.04); arms[1].add(paddle);
     arms[1].add(box(0.045, 0.18, 0.045, 0xe1c59b, 0, -0.45));
     scene.add(group);
-    return { group, legs, arms };
+    return { group, body, legs, arms };
   }
   const player = person(0x348ee0, 5, 0);
   const opponent = person(0xf09355, -5, Math.PI);
@@ -114,6 +117,31 @@ function boot() {
   scene.add(ballMesh);
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.12, 24), new THREE.MeshBasicMaterial({ color: 0x294a35, transparent: true, opacity: 0.4, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+  const trailCount = 8;
+  const trailPositions = new Float32Array(trailCount * 3), trailColors = new Float32Array(trailCount * 3);
+  for (let i = 0; i < trailCount; i++) new THREE.Color().setRGB(0.35 + i / trailCount * 0.6, 0.48 + i / trailCount * 0.5, 0.18).toArray(trailColors, i * 3);
+  const trailGeometry = new THREE.BufferGeometry();
+  trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+  trailGeometry.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+  const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.65, depthWrite: false }));
+  trail.frustumCulled = false; scene.add(trail);
+  let trailTime = 0;
+  function resetTrail() {
+    for (let i = 0; i < trailCount; i++) ball.position.toArray(trailPositions, i * 3);
+    trailGeometry.attributes.position.needsUpdate = true; trailTime = 0;
+  }
+  function launchBall(position: THREE.Vector3, velocity: THREE.Vector3) { ball.launch(position, velocity); resetTrail(); }
+  function effectRing(color: number) {
+    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.09, 24), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }));
+    mesh.visible = false; scene.add(mesh); return mesh;
+  }
+  const hitRing = effectRing(0xfff4a0), bounceRing = effectRing(0xffffff);
+  bounceRing.rotation.x = -Math.PI / 2;
+  let hitPulse = 0, bouncePulse = 0;
+  const landingMarker = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.30, 32), new THREE.MeshBasicMaterial({ color: 0x8df4ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+  landingMarker.rotation.x = -Math.PI / 2; scene.add(landingMarker);
+  const reachRing = new THREE.Mesh(new THREE.RingGeometry(1.21, 1.24, 48), new THREE.MeshBasicMaterial({ color: 0xb6d8dc, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false }));
+  reachRing.rotation.x = -Math.PI / 2; scene.add(reachRing);
   const aim = new THREE.Vector3(0, 0.05, -4.8);
   const marker = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.25, 32), new THREE.MeshBasicMaterial({ color: 0xffed91, side: THREE.DoubleSide }));
   marker.rotation.x = -Math.PI / 2; scene.add(marker);
@@ -136,14 +164,75 @@ function boot() {
   const overlay = document.querySelector<HTMLElement>('#match-overlay')!;
   const playerScore = document.querySelector<HTMLElement>('#player-score')!;
   const cpuScore = document.querySelector<HTMLElement>('#cpu-score')!;
+  const audio = new GameAudio();
+  const soundButton = document.querySelector<HTMLButtonElement>('#sound')!;
+  const volumeSlider = document.querySelector<HTMLInputElement>('#volume')!;
+  const volumeLabel = document.querySelector<HTMLElement>('#volume-label')!;
+  const motionControl = document.querySelector<HTMLInputElement>('#reduce-motion')!;
+  const pauseButton = document.querySelector<HTMLButtonElement>('#pause')!;
+  const pauseOverlay = document.querySelector<HTMLElement>('#pause-overlay')!;
+  const toast = document.querySelector<HTMLElement>('#shot-feedback')!;
+  const contactHint = document.querySelector<HTMLElement>('#contact-hint')!;
+  const landingHint = document.querySelector<HTMLElement>('#landing-hint')!;
+  const playerCard = document.querySelector<HTMLElement>('#player-card')!;
+  const cpuCard = document.querySelector<HTMLElement>('#cpu-card')!;
+  const serverLabel = document.querySelector<HTMLElement>('#server-label')!;
+  let paused = false, toastTime = 0;
+  let reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  try { const stored = localStorage.getItem('pickleball.reduceMotion'); if (stored !== null) reduceMotion = stored === 'on'; } catch { /* Optional preference. */ }
+  motionControl.checked = reduceMotion;
+  function text(element: HTMLElement, value: string) { if (element.textContent !== value) element.textContent = value; }
+  function syncSound() {
+    text(soundButton, audio.available ? audio.enabled ? '♪ 소리 켜짐' : '♪ 소리 꺼짐' : '소리 사용 불가');
+    soundButton.setAttribute('aria-pressed', String(audio.enabled && audio.available));
+    soundButton.disabled = !audio.available;
+    volumeSlider.value = String(Math.round(audio.volume * 100)); text(volumeLabel, `${Math.round(audio.volume * 100)}%`);
+  }
+  soundButton.addEventListener('click', () => {
+    audio.setEnabled(!audio.enabled); syncSound(); (document.activeElement as HTMLElement)?.blur();
+  });
+  volumeSlider.addEventListener('input', () => { audio.unlock(); audio.setVolume(Number(volumeSlider.value) / 100); syncSound(); });
+  volumeSlider.addEventListener('change', () => { audio.play('dink'); volumeSlider.blur(); });
+  motionControl.addEventListener('change', () => {
+    reduceMotion = motionControl.checked;
+    try { localStorage.setItem('pickleball.reduceMotion', reduceMotion ? 'on' : 'off'); } catch { /* Optional preference. */ }
+    motionControl.blur();
+  });
+  const playerVelocity = new THREE.Vector3();
+  function setPaused(value: boolean) {
+    if (['idle', 'over'].includes(match.phase)) return;
+    paused = value; keys.clear(); playerVelocity.set(0, 0, 0);
+    pauseOverlay.hidden = !paused; audio.setPaused(paused);
+    pauseButton.setAttribute('aria-pressed', String(paused));
+    if (!paused) { audio.unlock(); (document.activeElement as HTMLElement)?.blur(); }
+  }
+  pauseButton.addEventListener('click', () => setPaused(!paused));
+  document.querySelector('#resume')!.addEventListener('click', () => setPaused(false));
+  function feedback(value: string, good = true) {
+    text(toast, value); toastTime = 1.15;
+    toast.classList.toggle('good', good);
+  }
+  function shotEffect() {
+    hitRing.position.copy(ball.position); hitPulse = 0.18;
+  }
+  function groundEffect() {
+    bounceRing.position.set(ball.position.x, 0.054, ball.position.z); bouncePulse = 0.32;
+    audio.play('bounce');
+  }
+  syncSound();
   const serviceBox = new THREE.Mesh(new THREE.PlaneGeometry(width / 2, halfLength - kitchen), new THREE.MeshBasicMaterial({ color: 0xffdf7d, transparent: true, opacity: 0.21, depthWrite: false }));
   serviceBox.rotation.x = -Math.PI / 2; scene.add(serviceBox);
   let swingTimer = 0, hitCooldown = 0, nextPoint = 0, cpuServeDelay = 0;
   let announcedGameOver = false;
+  let playerShot: Shot = 'drive', swingSide = 1;
+  let lastPhase = match.phase;
+  let lastScore = { player: 0, cpu: 0 };
+  let lastServer = match.server;
   const keys = new Set<string>();
 
   function preparePoint() {
-    match.prepare(); ball.active = false; keys.clear(); cpu.reset();
+    match.prepare(); ball.active = false; keys.clear(); cpu.reset(); playerVelocity.set(0, 0, 0);
+    resetTrail(); hitPulse = 0; bouncePulse = 0; toastTime = 0;
     const from = match.servePosition, to = match.serveTarget;
     if (match.server === 'player') {
       player.group.position.set(from.x, 0.045, from.z);
@@ -156,13 +245,17 @@ function boot() {
     pointerInside = false; hitCooldown = 0; swingTimer = 0; cpuServeDelay = 1.2;
   }
   function startMatch() {
+    audio.unlock(); paused = false; pauseOverlay.hidden = true; audio.setPaused(false); pauseButton.setAttribute('aria-pressed', 'false');
+    lastScore = { player: 0, cpu: 0 }; lastServer = 'player';
     match.start(); announcedGameOver = false; overlay.hidden = true; nextPoint = 0;
     preparePoint(); (document.activeElement as HTMLElement)?.blur();
   }
   function dropServe() {
+    if (paused) return;
+    if (match.server === 'player') audio.unlock();
     if (!match.drop()) return;
     const actor = match.server === 'player' ? player.group.position : cpu.position;
-    ball.launch(new THREE.Vector3(actor.x + endSign(match.server) * 0.32, 1.0, actor.z - endSign(match.server) * 0.25), new THREE.Vector3());
+    launchBall(new THREE.Vector3(actor.x + endSign(match.server) * 0.32, 1.0, actor.z - endSign(match.server) * 0.25), new THREE.Vector3());
     (document.activeElement as HTMLElement)?.blur();
   }
   function inReach() {
@@ -176,14 +269,18 @@ function boot() {
     if (!match.serve(server, actor)) return;
     const destination = server === 'player' ? aim.clone() : new THREE.Vector3(match.serveTarget.x, 0, match.serveTarget.z);
     const distance = Math.hypot(destination.x - ball.position.x, destination.z - ball.position.z);
-    ball.launch(ball.position.clone(), launchVelocity(ball.position, destination, Math.max(1.2, distance / 9.2)));
+    launchBall(ball.position.clone(), launchVelocity(ball.position, destination, Math.max(1.2, distance / 9.2)));
+    audio.play('serve'); shotEffect(); feedback(server === 'player' ? 'SERVE · 대각선으로!' : 'CPU SERVE');
     if (server === 'player') cpu.receive(); else cpu.swing = 0.28;
   }
   function hit(shot: Shot) {
+    if (paused) return;
+    audio.unlock();
     if (match.phase === 'ready' && match.server === 'player') { dropServe(); return; }
     if (hitCooldown > 0 || !['rally', 'drop'].includes(match.phase)) return;
-    hitCooldown = 0.3; swingTimer = 0.28;
-    if (!inReach()) { match.message = '헛스윙! 가까운 공의 높이와 타이밍을 맞춰보세요.'; return; }
+    hitCooldown = 0.3; swingTimer = 0.32; playerShot = shot;
+    swingSide = ball.position.x >= player.group.position.x ? 1 : -1;
+    if (!inReach()) { match.message = '헛스윙! 가까운 공의 높이와 타이밍을 맞춰보세요.'; audio.play('miss'); feedback('헛스윙 · 공 가까이에서 클릭!', false); return; }
     if (match.phase === 'drop') { launchServe(); return; }
     if (!match.hit('player', player.group.position, ball.bounces)) return;
     const target = aim.clone();
@@ -191,7 +288,9 @@ function boot() {
     const error = Math.max(0, distance - 0.85) * 1.8 + Math.max(0, 0.45 - ball.position.y) * 2 +
       (shot === 'dink' ? Math.max(0, player.group.position.z - 3) * 0.15 : 0);
     target.x += (Math.random() - 0.5) * error; target.z += (Math.random() - 0.5) * error;
-    ball.launch(ball.position.clone(), shotVelocity(ball.position, target, shot)); cpu.receive();
+    launchBall(ball.position.clone(), shotVelocity(ball.position, target, shot)); cpu.receive();
+    const quality = contactQuality(distance, ball.position.y);
+    audio.play(shot); shotEffect(); feedback(`${shot === 'drive' ? 'DRIVE' : 'DINK'} · ${contactText[quality]}`, quality === 'sweet');
     match.message = shot === 'drive' ? '드라이브! 빠르고 낮게 보냅니다.' : '딩크! 상대 키친에 짧게 보내보세요.';
   }
   canvas.addEventListener('pointerdown', event => {
@@ -200,17 +299,19 @@ function boot() {
   serveButton.addEventListener('click', dropServe);
   document.querySelector('#start')!.addEventListener('click', startMatch);
   document.querySelector('#restart')!.addEventListener('click', startMatch);
+  document.querySelector('#pause-restart')!.addEventListener('click', startMatch);
   const validKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
   window.addEventListener('keydown', event => {
-    if (event.target instanceof HTMLButtonElement) return;
+    if ((event.code === 'Escape' || event.code === 'KeyP') && !event.repeat) { event.preventDefault(); setPaused(!paused); return; }
+    if (paused || event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement) return;
     if (validKeys.includes(event.code)) { event.preventDefault(); keys.add(event.code); }
     if (event.code === 'Space' && !event.repeat && match.server === 'player' && ['ready', 'drop'].includes(match.phase)) {
       event.preventDefault(); dropServe();
     }
   });
   window.addEventListener('keyup', event => keys.delete(event.code));
-  window.addEventListener('blur', () => keys.clear());
-  document.addEventListener('visibilitychange', () => { if (document.hidden) keys.clear(); });
+  window.addEventListener('blur', () => { keys.clear(); playerVelocity.set(0, 0, 0); setPaused(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { keys.clear(); playerVelocity.set(0, 0, 0); setPaused(true); } });
   canvas.addEventListener('contextmenu', event => event.preventDefault());
   function resize() {
     renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
@@ -223,19 +324,32 @@ function boot() {
   const desiredCamera = new THREE.Vector3();
   const lookAt = new THREE.Vector3(0, 0.3, -1.4);
   camera.position.set(1.8, 10.8, 16.8);
-  let stride = 0, accumulator = 0;
+  let stride = 0, accumulator = 0, gameTime = 0;
   const impact = new THREE.Vector3();
+    function animatePerson(actor: ReturnType<typeof person>, walking: boolean, phase: number, swingLeft: number, shot: Shot, lateral: number, side: number, ready: boolean, dt: number) {
+      const blend = 1 - Math.exp(-18 * dt);
+      const legSwing = walking ? Math.sin(phase) * 0.42 : 0;
+      const progress = swingLeft > 0 ? Math.sin((1 - Math.min(1, swingLeft / 0.32)) * Math.PI) : 0;
+      actor.legs[0].rotation.x = THREE.MathUtils.lerp(actor.legs[0].rotation.x, legSwing, blend);
+      actor.legs[1].rotation.x = THREE.MathUtils.lerp(actor.legs[1].rotation.x, -legSwing, blend);
+      actor.arms[0].rotation.x = THREE.MathUtils.lerp(actor.arms[0].rotation.x, -legSwing * 0.4 + 0.1, blend);
+      actor.arms[1].rotation.x = THREE.MathUtils.lerp(actor.arms[1].rotation.x, 0.25 + progress * (shot === 'drive' ? 1.9 : 1.1) + legSwing * 0.2, blend);
+      actor.arms[1].rotation.z = THREE.MathUtils.lerp(actor.arms[1].rotation.z, side * progress * 0.65, blend);
+      actor.body.rotation.y = THREE.MathUtils.lerp(actor.body.rotation.y, side * progress * (shot === 'drive' ? 0.32 : 0.15), blend);
+      actor.body.rotation.z = THREE.MathUtils.lerp(actor.body.rotation.z, -lateral * 0.018, blend);
+      actor.body.position.y = reduceMotion ? 0 : (walking ? Math.abs(Math.sin(phase)) * 0.025 : Math.sin(gameTime * 2.4) * 0.006) - (ready ? 0.025 : 0);
+    }
   renderer.setAnimationLoop(() => {
-    const dt = document.hidden ? 0 : Math.min(clock.getDelta(), 0.05);
-    // Consume wall time even while the tab is hidden, so returning never jumps the ball.
-    if (document.hidden) clock.getDelta();
-    const canMove = ['ready', 'drop', 'rally', 'settling'].includes(match.phase);
+    const elapsed = clock.getDelta();
+    const dt = document.hidden || paused ? 0 : Math.min(elapsed, 0.05);
+    gameTime += dt;
+    const canMove = !paused && ['ready', 'drop', 'rally', 'settling'].includes(match.phase);
     movement.set(canMove ? Number(keys.has('KeyD')) - Number(keys.has('KeyA')) : 0, 0,
       canMove ? Number(keys.has('KeyS')) - Number(keys.has('KeyW')) : 0);
     hitCooldown = Math.max(0, hitCooldown - dt); swingTimer = Math.max(0, swingTimer - dt);
-    if (match.phase === 'between') { nextPoint += dt; if (nextPoint >= 2.2) { nextPoint = 0; preparePoint(); } }
-    if (match.phase === 'ready' && match.server === 'cpu') { cpuServeDelay -= dt; if (cpuServeDelay <= 0) dropServe(); }
-    if (pointerInside) {
+    if (!paused && match.phase === 'between') { nextPoint += dt; if (nextPoint >= 2.2) { nextPoint = 0; preparePoint(); } }
+    if (!paused && match.phase === 'ready' && match.server === 'cpu') { cpuServeDelay -= dt; if (cpuServeDelay <= 0) dropServe(); }
+    if (pointerInside && !paused) {
       raycaster.setFromCamera(pointer, camera);
       if (raycaster.ray.intersectPlane(aimPlane, impact)) aim.set(THREE.MathUtils.clamp(impact.x, -3.45, 3.45), 0.05, THREE.MathUtils.clamp(impact.z, -7.1, -0.25));
     }
@@ -243,8 +357,12 @@ function boot() {
     serviceBox.visible = match.server === 'player' && ['ready', 'drop'].includes(match.phase);
     serviceBox.position.set(match.serveTarget.x < 0 ? -width / 4 : width / 4, 0.047, -(halfLength + kitchen) / 2);
     const oldPlayerZ = player.group.position.z;
-    const moving = movement.lengthSq() > 0;
-    if (moving) { movement.normalize(); player.group.position.addScaledVector(movement, 3.8 * dt); stride += dt * 11; }
+    movement.normalize().multiplyScalar(3.8);
+    playerVelocity.lerp(movement, 1 - Math.exp(-20 * dt));
+    if (playerVelocity.lengthSq() < 0.0001) playerVelocity.set(0, 0, 0);
+    player.group.position.addScaledVector(playerVelocity, dt);
+    const moving = playerVelocity.lengthSq() > 0.03;
+    if (moving) stride += playerVelocity.length() * dt * 2.8;
     // Movement assistance never serves or hits a ball, and cannot pull a volley into the kitchen.
     if (match.phase === 'rally' && match.receiver === 'player' && ball.active && ball.position.z > 0 && ball.position.y < 2.2) {
       const dx = ball.position.x - player.group.position.x, dz = ball.position.z - player.group.position.z;
@@ -262,6 +380,7 @@ function boot() {
       const step = 1 / 120;
       if (match.phase === 'drop') {
         const event = ball.step(step, true);
+        if (event === 'bounce' || event === 'double-bounce') groundEffect();
         if (match.server === 'cpu' && ball.bounces === 1 && ball.position.y >= 0.24 && ball.active) launchServe();
         else if (!ball.active && event) {
           match.phase = 'ready'; cpuServeDelay = 0.5;
@@ -269,7 +388,8 @@ function boot() {
         }
       } else if (match.phase === 'rally') {
         const event = ball.step(step);
-        if (event === 'net') match.net();
+        if (event === 'net') { audio.play('net'); match.net(); }
+        if (event === 'bounce' || event === 'out' || event === 'double-bounce') groundEffect();
         if (event === 'bounce' || event === 'out' || event === 'double-bounce') match.bounce(ball.position, ball.bounces);
       }
       if (match.phase === 'rally') {
@@ -277,9 +397,10 @@ function boot() {
         const reply = cpu.update(step, ball, player.group.position, match.receiver === 'cpu');
         match.updateFeet('cpu', cpu.position, step, cpu.position.z > previousZ + 0.00001);
         if (reply && match.phase === 'rally') {
-          if (reply.missed) match.message = 'CPU가 헛스윙했습니다!';
+          if (reply.missed) { match.message = 'CPU가 헛스윙했습니다!'; audio.play('miss'); }
           else if (match.hit('cpu', cpu.position, ball.bounces)) {
-            ball.launch(ball.position.clone(), shotVelocity(ball.position, reply.target, reply.shot));
+            launchBall(ball.position.clone(), shotVelocity(ball.position, reply.target, reply.shot));
+            audio.play(reply.shot); shotEffect();
             match.message = `CPU ${reply.shot === 'drive' ? '드라이브' : '딩크'}! 직접 받아치세요.`;
           }
         }
@@ -293,11 +414,7 @@ function boot() {
       accumulator -= step;
     }
     opponent.group.position.copy(cpu.position);
-    const cpuSwing = cpu.moving ? Math.sin(cpu.stride) * 0.4 : 0;
-    opponent.legs[0].rotation.x = cpuSwing; opponent.legs[1].rotation.x = -cpuSwing;
-    opponent.arms[0].rotation.x = -cpuSwing * 0.5;
-    opponent.arms[1].rotation.x = cpu.swing > 0 ? -Math.sin(cpu.swing / 0.28 * Math.PI) * 1.7 : cpuSwing * 0.5;
-    cpuLabel.textContent = match.server === 'cpu' && ['ready', 'drop'].includes(match.phase) ? '서브 준비' : cpu.status;
+    text(cpuLabel, match.server === 'cpu' && ['ready', 'drop'].includes(match.phase) ? '서브 준비' : cpu.status);
     if (match.phase === 'ready') {
       const actor = match.server === 'player' ? player.group.position : cpu.position;
       ball.position.set(actor.x + endSign(match.server) * 0.32, 1, actor.z - endSign(match.server) * 0.25);
@@ -308,28 +425,69 @@ function boot() {
     const reach = inReach();
     const mustBounce = match.phase === 'rally' && match.receiver === 'player' && match.bounceRequired.player;
     const kitchenVolley = reach && match.phase === 'rally' && ball.bounces === 0 && inKitchen(player.group.position);
-    readiness.textContent = match.phase === 'ready' ? (match.server === 'player' ? 'Space 또는 클릭으로 서브 공 떨어뜨리기' : 'CPU 서브를 준비합니다') :
+    const quality = contactQuality(Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z), ball.position.y);
+    text(readiness, match.phase === 'ready' ? (match.server === 'player' ? 'Space 또는 클릭으로 서브 공 떨어뜨리기' : 'CPU 서브를 준비합니다') :
       mustBounce ? '투바운스 룰 · 바운드를 기다리세요' : kitchenVolley ? '키친 안 · 바운드한 공만 타격 가능' :
-      reach ? '● 지금 클릭하면 타격 가능' : match.phase === 'rally' ? '○ 공을 따라 이동하세요' : match.phase === 'drop' ? '드롭 서브 · 바운드 후 클릭' : '11점 · 2점 차 승리 · 서버만 득점';
+      reach ? '● 지금 클릭하면 타격 가능' : match.phase === 'rally' ? '○ 공을 따라 이동하세요' : match.phase === 'drop' ? '드롭 서브 · 바운드 후 클릭' : '11점 · 2점 차 승리 · 서버만 득점');
     readiness.classList.toggle('ready', reach && !mustBounce && !kitchenVolley);
-    message.textContent = match.message;
-    rallyLabel.textContent = String(match.hits);
-    playerScore.textContent = String(match.score.player); cpuScore.textContent = String(match.score.cpu);
-    document.querySelector('#player-card')!.classList.toggle('serving', match.server === 'player');
-    document.querySelector('#cpu-card')!.classList.toggle('serving', match.server === 'cpu');
-    document.querySelector('#server-label')!.textContent = `${match.server === 'player' ? '나' : 'CPU'} 서브 · ${match.score[match.server] % 2 === 0 ? '오른쪽' : '왼쪽'}`;
-    serveButton.disabled = match.server !== 'player' || !['ready', 'drop'].includes(match.phase);
+    const serving = match.server === 'player' && ['ready', 'drop'].includes(match.phase);
+    const aimError = serving ? match.serveLandingError(aim) : !inCourt(aim) ? '목표가 라인 밖입니다. 아웃에 주의하세요.' : undefined;
+    marker.material.color.setHex(aimError ? 0xff8168 : 0xffed91);
+    text(contactHint, aimError || (reach && !mustBounce && !kitchenVolley ? contactText[quality] : serving ? '노란 서비스 코트 조준 → 바운드 후 직접 클릭' : '낮은 공은 딩크로 띄워보세요.'));
+    contactHint.classList.toggle('warning', Boolean(aimError));
+    const showLanding = match.phase === 'rally' && match.receiver === 'player' && ball.active && ball.bounces === 0;
+    landingMarker.visible = showLanding;
+    if (showLanding) {
+      const expected = landingPoint(ball.position, ball.velocity);
+      landingMarker.position.set(expected.x, expected.y, expected.z);
+      landingMarker.material.color.setHex(inCourt(expected) ? 0x8df4ff : 0xff8c73);
+      landingMarker.scale.setScalar(reduceMotion ? 1 : 1 + Math.sin(gameTime * 7) * 0.06);
+    }
+    text(landingHint, showLanding ? '◎ 하늘색 원: 첫 바운드 예상 위치 · 라인 밖은 주황색' : 'WASD 이동 · P / Esc 일시정지');
+    reachRing.visible = !paused && (match.phase === 'rally' && match.receiver === 'player' || match.phase === 'drop' && match.server === 'player');
+    reachRing.position.set(player.group.position.x, 0.052, player.group.position.z);
+    reachRing.material.color.setHex(mustBounce || kitchenVolley ? 0xf4a478 : reach ? 0x9affc4 : 0xb6d8dc);
+    text(message, match.message); text(rallyLabel, String(match.hits));
+    text(playerScore, String(match.score.player)); text(cpuScore, String(match.score.cpu));
+    playerCard.classList.toggle('serving', match.server === 'player'); cpuCard.classList.toggle('serving', match.server === 'cpu');
+    text(serverLabel, `${match.server === 'player' ? '나' : 'CPU'} 서브 · ${match.score[match.server] % 2 === 0 ? '오른쪽' : '왼쪽'}`);
+    serveButton.disabled = paused || match.server !== 'player' || !['ready', 'drop'].includes(match.phase);
+    pauseButton.disabled = ['idle', 'over'].includes(match.phase);
+    if (match.phase !== lastPhase) {
+      if (match.phase === 'settling' && !match.pending?.reason.includes('네트')) audio.play('fault');
+      if (match.phase === 'between' || match.phase === 'over') {
+        const scorer = match.score.player > lastScore.player ? 'player' : match.score.cpu > lastScore.cpu ? 'cpu' : null;
+        if (scorer) {
+          feedback(`${scorer === 'player' ? '나' : 'CPU'} +1 · ${match.score.player} : ${match.score.cpu}`, scorer === 'player');
+          if (!reduceMotion) (scorer === 'player' ? playerScore : cpuScore).animate([{ transform: 'scale(1.35)', color: '#2b9962' }, { transform: 'scale(1)', color: '#163e3c' }], { duration: 400 });
+          if (match.phase !== 'over') audio.play('point');
+        } else if (match.server !== lastServer) { feedback(`${match.server === 'player' ? '나' : 'CPU'}에게 서브권 이동`, match.server === 'player'); audio.play('sideout'); }
+      }
+      lastPhase = match.phase;
+    }
+    lastScore = { ...match.score }; lastServer = match.server;
+    toastTime = Math.max(0, toastTime - dt); toast.classList.toggle('visible', toastTime > 0 && !paused);
+    document.documentElement.classList.toggle('reduced-motion', reduceMotion);
+    syncSound();
     if (match.phase === 'over' && !announcedGameOver) {
-      announcedGameOver = true; keys.clear(); overlay.hidden = false;
+      announcedGameOver = true; keys.clear(); playerVelocity.set(0, 0, 0); audio.play(match.winner === 'player' ? 'win' : 'lose'); overlay.hidden = false;
       document.querySelector('#overlay-title')!.textContent = match.winner === 'player' ? '승리했습니다!' : '다음 경기엔 이겨봐요';
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }
-    const swing = moving ? Math.sin(stride) * 0.42 : 0;
-    player.legs[0].rotation.x = swing; player.legs[1].rotation.x = -swing;
-    player.arms[0].rotation.x = -swing * 0.6;
-    player.arms[1].rotation.x = swingTimer > 0 ? -Math.sin(swingTimer / 0.28 * Math.PI) * 1.7 - 0.2 : swing * 0.4 - 0.2;
-    player.group.position.y = 0.045 + (moving ? Math.abs(Math.sin(stride)) * 0.025 : 0);
+    animatePerson(player, moving, stride, swingTimer, playerShot, playerVelocity.x, swingSide, reach, dt);
+    animatePerson(opponent, cpu.moving, cpu.stride, cpu.swing, cpu.status === '딩크' ? 'dink' : 'drive', 0, 1, match.phase === 'rally' && match.receiver === 'cpu', dt);
+    trailTime += dt;
+    if (trailTime >= 0.025) {
+      trailTime = 0; trailPositions.copyWithin(0, 3); ball.position.toArray(trailPositions, (trailCount - 1) * 3);
+      trailGeometry.attributes.position.needsUpdate = true;
+    }
+    trail.visible = !reduceMotion && ball.active && match.phase === 'rally';
+    hitPulse = Math.max(0, hitPulse - dt); bouncePulse = Math.max(0, bouncePulse - dt);
+    hitRing.visible = !reduceMotion && hitPulse > 0; hitRing.quaternion.copy(camera.quaternion);
+    hitRing.scale.setScalar(1 + (1 - hitPulse / 0.18) * 4); hitRing.material.opacity = hitPulse / 0.18;
+    bounceRing.visible = !reduceMotion && bouncePulse > 0;
+    bounceRing.scale.setScalar(1 + (1 - bouncePulse / 0.32) * 5); bounceRing.material.opacity = bouncePulse / 0.32;
     desiredCamera.set(player.group.position.x * 0.23 + 1.8, 10.8, 15.5 + player.group.position.z * 0.26);
     camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * dt)); camera.lookAt(lookAt);
     renderer.render(scene, camera);
