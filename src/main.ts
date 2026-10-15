@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import './style.css';
 import { CpuPlayer } from './cpu';
 import { GameAudio } from './audio';
+import { DEFAULT_GAME_SPEED, parseGameSpeed, simulationDelta } from './speed';
 import { landingPoint, contactQuality, contactText } from './feedback';
 import { SinglesMatch, endSign, inKitchen, inCourt } from './match';
 import { PracticeBall, BALL_RADIUS, launchVelocity, shotVelocity, type Shot } from './ball';
@@ -112,18 +113,24 @@ function boot() {
   }
 
   const ball = new PracticeBall();
-  const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL_RADIUS * 1.65, 20, 12), new THREE.MeshStandardMaterial({ color: 0xeaff16, emissive: 0x778800, emissiveIntensity: 0.45, roughness: 0.5 }));
-  ballMesh.castShadow = true;
+  // Only the drawing is enlarged. PracticeBall still uses the physical BALL_RADIUS.
+  const ballDisplayRadius = BALL_RADIUS * 3.25;
+  const ballMesh = new THREE.Group();
+  const ballBody = new THREE.Mesh(new THREE.SphereGeometry(ballDisplayRadius, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffed20 }));
+  const ballOutline = new THREE.Mesh(new THREE.SphereGeometry(ballDisplayRadius * 1.22, 24, 16), new THREE.MeshBasicMaterial({ color: 0x132b42, side: THREE.BackSide }));
+  ballMesh.add(ballOutline, ballBody);
   scene.add(ballMesh);
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.12, 24), new THREE.MeshBasicMaterial({ color: 0x294a35, transparent: true, opacity: 0.4, depthWrite: false }));
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.16, 32), new THREE.MeshBasicMaterial({ color: 0x132b42, transparent: true, opacity: 0.65, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+  const shadowRim = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.205, 32), new THREE.MeshBasicMaterial({ color: 0xffffe0, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+  shadowRim.rotation.x = -Math.PI / 2; scene.add(shadowRim);
   const trailCount = 8;
   const trailPositions = new Float32Array(trailCount * 3), trailColors = new Float32Array(trailCount * 3);
-  for (let i = 0; i < trailCount; i++) new THREE.Color().setRGB(0.35 + i / trailCount * 0.6, 0.48 + i / trailCount * 0.5, 0.18).toArray(trailColors, i * 3);
+  for (let i = 0; i < trailCount; i++) new THREE.Color().lerpColors(new THREE.Color(0xd1efff), new THREE.Color(0xffef45), i / (trailCount - 1)).toArray(trailColors, i * 3);
   const trailGeometry = new THREE.BufferGeometry();
   trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
   trailGeometry.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
-  const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.65, depthWrite: false }));
+  const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false }));
   trail.frustumCulled = false; scene.add(trail);
   let trailTime = 0;
   function resetTrail() {
@@ -139,6 +146,7 @@ function boot() {
   bounceRing.rotation.x = -Math.PI / 2;
   let hitPulse = 0, bouncePulse = 0;
   const landingMarker = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.30, 32), new THREE.MeshBasicMaterial({ color: 0x8df4ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+  landingMarker.add(new THREE.Mesh(new THREE.RingGeometry(0.30, 0.35, 32), new THREE.MeshBasicMaterial({ color: 0x132b42, side: THREE.DoubleSide, depthWrite: false })));
   landingMarker.rotation.x = -Math.PI / 2; scene.add(landingMarker);
   const reachRing = new THREE.Mesh(new THREE.RingGeometry(1.21, 1.24, 48), new THREE.MeshBasicMaterial({ color: 0xb6d8dc, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false }));
   reachRing.rotation.x = -Math.PI / 2; scene.add(reachRing);
@@ -165,6 +173,16 @@ function boot() {
   const playerScore = document.querySelector<HTMLElement>('#player-score')!;
   const cpuScore = document.querySelector<HTMLElement>('#cpu-score')!;
   const audio = new GameAudio();
+  const speedControl = document.querySelector<HTMLSelectElement>('#game-speed')!;
+  let gameSpeed = DEFAULT_GAME_SPEED;
+  try { gameSpeed = parseGameSpeed(localStorage.getItem('pickleball.speed')); } catch { /* Optional preference. */ }
+  speedControl.value = String(gameSpeed);
+  speedControl.addEventListener('change', () => {
+    gameSpeed = parseGameSpeed(speedControl.value);
+    speedControl.value = String(gameSpeed);
+    try { localStorage.setItem('pickleball.speed', String(gameSpeed)); } catch { /* Optional preference. */ }
+    speedControl.blur();
+  });
   const soundButton = document.querySelector<HTMLButtonElement>('#sound')!;
   const volumeSlider = document.querySelector<HTMLInputElement>('#volume')!;
   const volumeLabel = document.querySelector<HTMLElement>('#volume-label')!;
@@ -303,7 +321,7 @@ function boot() {
   const validKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
   window.addEventListener('keydown', event => {
     if ((event.code === 'Escape' || event.code === 'KeyP') && !event.repeat) { event.preventDefault(); setPaused(!paused); return; }
-    if (paused || event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement) return;
+    if (paused || event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
     if (validKeys.includes(event.code)) { event.preventDefault(); keys.add(event.code); }
     if (event.code === 'Space' && !event.repeat && match.server === 'player' && ['ready', 'drop'].includes(match.phase)) {
       event.preventDefault(); dropServe();
@@ -341,7 +359,8 @@ function boot() {
     }
   renderer.setAnimationLoop(() => {
     const elapsed = clock.getDelta();
-    const dt = document.hidden || paused ? 0 : Math.min(elapsed, 0.05);
+    const realDt = document.hidden || paused ? 0 : Math.min(Math.max(elapsed, 0), 0.05);
+    const dt = simulationDelta(elapsed, gameSpeed, document.hidden || paused);
     gameTime += dt;
     const canMove = !paused && ['ready', 'drop', 'rally', 'settling'].includes(match.phase);
     movement.set(canMove ? Number(keys.has('KeyD')) - Number(keys.has('KeyA')) : 0, 0,
@@ -421,7 +440,13 @@ function boot() {
     }
     ballMesh.position.copy(ball.position); ballMesh.visible = !['idle', 'over', 'between'].includes(match.phase);
     shadow.position.set(ball.position.x, 0.05, ball.position.z); shadow.visible = ballMesh.visible;
-    shadow.scale.setScalar(1 + ball.position.y * 0.15);
+    shadow.scale.setScalar(1 + ball.position.y * 0.10);
+    shadowRim.position.copy(shadow.position); shadowRim.scale.copy(shadow.scale); shadowRim.visible = shadow.visible;
+    // Target a 12 CSS-pixel ball at a distance, with a capped visual boost.
+    const pixelsRadius = 12 * camera.position.distanceTo(ball.position) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(1, canvas.clientHeight);
+    ballMesh.scale.setScalar(THREE.MathUtils.clamp(pixelsRadius / ballDisplayRadius, 1, 2));
+    // Lift only the enlarged drawing so its outline is not cut off by the floor.
+    ballMesh.position.y += ballDisplayRadius * ballMesh.scale.x * 1.22 - BALL_RADIUS;
     const reach = inReach();
     const mustBounce = match.phase === 'rally' && match.receiver === 'player' && match.bounceRequired.player;
     const kitchenVolley = reach && match.phase === 'rally' && ball.bounces === 0 && inKitchen(player.group.position);
@@ -443,7 +468,7 @@ function boot() {
       landingMarker.material.color.setHex(inCourt(expected) ? 0x8df4ff : 0xff8c73);
       landingMarker.scale.setScalar(reduceMotion ? 1 : 1 + Math.sin(gameTime * 7) * 0.06);
     }
-    text(landingHint, showLanding ? '◎ 하늘색 원: 첫 바운드 예상 위치 · 라인 밖은 주황색' : 'WASD 이동 · P / Esc 일시정지');
+    text(landingHint, showLanding ? '◎ 큰 원: 예상 착지 · 진한 점: 공 아래 · 아웃 예상은 주황색' : 'WASD 이동 · P / Esc 일시정지');
     reachRing.visible = !paused && (match.phase === 'rally' && match.receiver === 'player' || match.phase === 'drop' && match.server === 'player');
     reachRing.position.set(player.group.position.x, 0.052, player.group.position.z);
     reachRing.material.color.setHex(mustBounce || kitchenVolley ? 0xf4a478 : reach ? 0x9affc4 : 0xb6d8dc);
@@ -489,7 +514,7 @@ function boot() {
     bounceRing.visible = !reduceMotion && bouncePulse > 0;
     bounceRing.scale.setScalar(1 + (1 - bouncePulse / 0.32) * 5); bounceRing.material.opacity = bouncePulse / 0.32;
     desiredCamera.set(player.group.position.x * 0.23 + 1.8, 10.8, 15.5 + player.group.position.z * 0.26);
-    camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * dt)); camera.lookAt(lookAt);
+    camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * realDt)); camera.lookAt(lookAt);
     renderer.render(scene, camera);
   });
 }
