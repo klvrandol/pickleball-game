@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { contactBodyOffset } from './volley.ts';
 import type { Shot } from './ball.ts';
 
 export type AthleteTeam = 'player' | 'cpu';
@@ -163,6 +164,7 @@ export function createAthlete(team: AthleteTeam, z: number, facing: number): Ath
 }
 
 export interface AthletePose {
+  contact?: THREE.Vector3; contactBlend?: number;
   walking: boolean; phase: number; swingLeft: number; shot: Shot;
   lateral: number; side: number; ready: boolean; dt: number; time: number; reduceMotion: boolean;
 }
@@ -183,5 +185,50 @@ export function animateAthlete(actor: Athlete, pose: AthletePose) {
   actor.chest.rotation.y = THREE.MathUtils.lerp(actor.chest.rotation.y, side * swing * (shot === 'drive' ? 0.32 : 0.14), blend);
   actor.head.rotation.y = -actor.chest.rotation.y * 0.45;
   actor.body.rotation.z = THREE.MathUtils.lerp(actor.body.rotation.z, -lateral * 0.014, blend);
-  actor.body.position.y = reduceMotion ? 0 : (walking ? Math.abs(Math.sin(phase)) * 0.018 : Math.sin(time * 2.4) * 0.005);
+  actor.body.position.y = THREE.MathUtils.lerp(actor.body.position.y, reduceMotion ? 0 : (walking ? Math.abs(Math.sin(phase)) * 0.018 : Math.sin(time * 2.4) * 0.005), blend);
+  actor.chest.position.x *= 1 - blend; actor.chest.position.z *= 1 - blend;
+  if (pose.contact) {
+    const arm = actor.arms[1].quaternion.clone(), elbow = actor.elbows[1].quaternion.clone();
+    const body = actor.body.position.clone(), chest = actor.chest.position.clone();
+    const joints = [...actor.legs, ...actor.knees, ...actor.feet];
+    const jointRotations = joints.map(joint => joint.quaternion.clone());
+    posePaddleContact(actor, pose.contact);
+    const weight = pose.contactBlend ?? 1;
+    actor.arms[1].quaternion.slerpQuaternions(arm, actor.arms[1].quaternion.clone(), weight);
+    actor.elbows[1].quaternion.slerpQuaternions(elbow, actor.elbows[1].quaternion.clone(), weight);
+    actor.body.position.lerpVectors(body, actor.body.position.clone(), weight);
+    actor.chest.position.lerpVectors(chest, actor.chest.position.clone(), weight);
+    joints.forEach((joint, i) => joint.quaternion.slerpQuaternions(jointRotations[i], joint.quaternion.clone(), weight));
+  }
+}
+
+/** Two-link shoulder/elbow pose places the paddle face at the real ball contact. */
+export function posePaddleContact(actor: Athlete, target: THREE.Vector3) {
+  actor.group.updateWorldMatrix(true, true);
+  const relative = actor.group.worldToLocal(target.clone());
+  // A small visual lunge and knee bend extend the reach without teleporting the feet.
+  const offset = contactBodyOffset(relative);
+  actor.body.position.set(0, offset.y, 0);
+  actor.chest.position.set(offset.x, 0, offset.z);
+  const crouch = Math.acos(THREE.MathUtils.clamp((0.72 + actor.body.position.y) / 0.72, 0, 1));
+  for (let i = 0; i < 2; i++) {
+    actor.legs[i].rotation.x = crouch; actor.knees[i].rotation.x = -2 * crouch; actor.feet[i].rotation.x = crouch;
+  }
+  actor.group.updateWorldMatrix(true, true);
+  const local = actor.chest.worldToLocal(target.clone());
+  const shoulder = actor.arms[1];
+  local.sub(shoulder.position);
+  const direction = local.clone();
+  const distance = direction.length();
+  const upper = 0.26, lower = 0.61;
+  if (distance < 0.05 || distance > upper + lower + 0.15) return;
+  direction.normalize();
+  const d = THREE.MathUtils.clamp(distance, lower - upper + 0.001, upper + lower - 0.001);
+  const along = (d * d + upper * upper - lower * lower) / (2 * d);
+  const bend = new THREE.Vector3(0, 0, 1).cross(direction).normalize();
+  if (bend.lengthSq() < 0.1) bend.set(1, 0, 0);
+  const elbow = direction.clone().multiplyScalar(along).addScaledVector(bend, Math.sqrt(Math.max(0, upper * upper - along * along)));
+  shoulder.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), elbow.clone().normalize());
+  const lowerDirection = local.clone().sub(elbow).applyQuaternion(shoulder.quaternion.clone().invert()).normalize();
+  actor.elbows[1].quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), lowerDirection);
 }

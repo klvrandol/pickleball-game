@@ -6,7 +6,9 @@ export interface RallyResult {
   readonly score: Readonly<{ player: number; cpu: number }>;
   readonly matchWinner: Side | null;
 }
-export interface CourtPosition { x: number; z: number }
+export interface CourtPosition { x: number; z: number; grounded?: boolean }
+// With no jump control, avatars are grounded. Optional airborne samples retain takeoff
+// eligibility and keep momentum faults pending until both feet land outside the kitchen.
 export const HALF_WIDTH = 3.048;
 export const HALF_LENGTH = 6.7056;
 export const KITCHEN = 2.1336;
@@ -36,6 +38,7 @@ export class SinglesMatch {
   serveLandingPending = false;
   pending: { loser: Side; reason: string } | null = null;
   private settleTime = 0;
+  private kitchenDeparture = { player: false, cpu: false };
   // Simplified grounded-avatar follow-through: at least 0.6s, longer while still advancing.
   private followThrough = { player: 0, cpu: 0 };
   private watching = { player: false, cpu: false };
@@ -47,6 +50,7 @@ export class SinglesMatch {
   prepare() {
     this.phase = 'ready'; this.pending = null; this.hits = 0; this.result = null;
     this.bounceRequired = { player: true, cpu: true }; this.serveLandingPending = false;
+    this.kitchenDeparture = { player: false, cpu: false };
     this.watching = { player: false, cpu: false }; this.followThrough = { player: 0, cpu: 0 };
     this.message = `${sideName(this.server)} 서브 · ${this.score[this.server] % 2 === 0 ? '오른쪽' : '왼쪽'}에서 대각선으로!`;
   }
@@ -79,12 +83,13 @@ export class SinglesMatch {
   hit(side: Side, feet: CourtPosition, bounces: number): boolean {
     if (this.phase !== 'rally' || side !== this.receiver) return false;
     if (this.bounceRequired[side]) { this.fault(side, '투바운스 룰: 서브와 첫 리턴은 각각 바운드한 뒤 쳐야 합니다.'); return false; }
+    if (feet.grounded !== false) this.kitchenDeparture[side] = inKitchen(feet);
     if (bounces === 0) {
-      if (inKitchen(feet)) { this.fault(side, '키친 발리 반칙: 발이 키친 또는 경계선에 닿았습니다.'); return false; }
+      if ((feet.grounded !== false && inKitchen(feet)) || this.kitchenDeparture[side]) { this.fault(side, '키친 발리 반칙: 발이 키친 또는 경계선에 닿았습니다.'); return false; }
       this.watching[side] = true; this.followThrough[side] = 0.6;
     }
     this.lastHitter = side; this.hits++;
-    this.message = `${sideName(side)} 타격 · 랠리 ${this.hits}`;
+    this.message = `${sideName(side)} ${bounces === 0 ? '발리' : '타격'} · 랠리 ${this.hits}`;
     return true;
   }
   bounce(p: CourtPosition, count: number) {
@@ -102,14 +107,15 @@ export class SinglesMatch {
   }
   net() { if (this.phase === 'rally') this.fault(this.lastHitter, '네트에 걸렸습니다.'); }
   updateFeet(side: Side, p: CourtPosition, dt: number, advancing: boolean) {
+    if (p.grounded !== false) this.kitchenDeparture[side] = inKitchen(p);
     if (!this.watching[side] || (this.phase !== 'rally' && this.phase !== 'settling')) return;
-    if (inKitchen(p)) {
+    if (p.grounded !== false && inKitchen(p)) {
       this.watching[side] = false;
       this.fault(side, '키친 발리 반칙: 타격 후 관성 이동으로 키친에 들어갔습니다.');
       return;
     }
     this.followThrough[side] -= dt;
-    if (this.followThrough[side] <= 0 && !advancing) this.watching[side] = false;
+    if (this.followThrough[side] <= 0 && !advancing && p.grounded !== false) this.watching[side] = false;
   }
   fault(loser: Side, reason: string) {
     if (this.phase !== 'rally' && this.phase !== 'drop' && this.phase !== 'settling') return;

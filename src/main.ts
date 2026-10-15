@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createAthlete, animateAthlete } from './athlete';
 import './style.css';
+import { canContact, volleyVelocity, volleyStyle, SWING_CONTACT_DELAY } from './volley';
 import { CpuPlayer } from './cpu';
 import { GameAudio } from './audio';
 import { DEFAULT_GAME_SPEED, parseGameSpeed, simulationDelta } from './speed';
@@ -220,12 +221,17 @@ function boot() {
   const serviceBox = new THREE.Mesh(new THREE.PlaneGeometry(width / 2, halfLength - kitchen), new THREE.MeshBasicMaterial({ color: 0xffdf7d, transparent: true, opacity: 0.21, depthWrite: false }));
   serviceBox.rotation.x = -Math.PI / 2; scene.add(serviceBox);
   let swingTimer = 0, hitCooldown = 0, cpuServeDelay = 0;
+  let pendingHit: { shot: Shot; remaining: number } | null = null;
+  let contactPoseTime = 0;
+  const playerContact = new THREE.Vector3(), cpuContact = new THREE.Vector3();
+  let cpuContactTime = 0;
   let announcedGameOver = false;
   let playerShot: Shot = 'drive', swingSide = 1;
   let lastPhase = match.phase;
   const keys = new Set<string>();
 
   function preparePoint() {
+    pendingHit = null; contactPoseTime = 0; cpuContactTime = 0;
     match.prepare(); ball.active = false; keys.clear(); cpu.reset(); playerVelocity.set(0, 0, 0);
     resetTrail(); hitPulse = 0; bouncePulse = 0; toastTime = 0;
     const from = match.servePosition, to = match.serveTarget;
@@ -255,8 +261,7 @@ function boot() {
   }
   function inReach() {
     const allowed = match.phase === 'rally' && match.receiver === 'player' || match.phase === 'drop' && match.server === 'player' && ball.bounces === 1;
-    return allowed && ball.active && ball.position.z > 0 && ball.position.y >= 0.16 && ball.position.y <= 1.9 &&
-      Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z) <= 1.25;
+    return allowed && ball.active && ball.position.z > 0 && canContact(player.group.position, ball.position);
   }
   function launchServe() {
     const actor = match.server === 'player' ? player.group.position : cpu.position;
@@ -277,16 +282,23 @@ function boot() {
     swingSide = ball.position.x >= player.group.position.x ? 1 : -1;
     if (!inReach()) { match.message = '헛스윙! 가까운 공의 높이와 타이밍을 맞춰보세요.'; audio.play('miss'); feedback('헛스윙 · 공 가까이에서 클릭!', false); return; }
     if (match.phase === 'drop') { launchServe(); return; }
+    pendingHit = { shot, remaining: SWING_CONTACT_DELAY };
+  }
+  function contactHit(shot: Shot) {
+    if (!inReach() || match.phase !== 'rally') { audio.play('miss'); feedback('헛스윙 · 공이 타격 범위를 벗어났어요', false); return; }
+    const volley = ball.bounces === 0;
     if (!match.hit('player', player.group.position, ball.bounces)) return;
+    playerContact.copy(ball.position); contactPoseTime = 0.11;
     const target = aim.clone();
     const distance = Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z);
     const error = Math.max(0, distance - 0.85) * 1.8 + Math.max(0, 0.45 - ball.position.y) * 2 +
       (shot === 'dink' ? Math.max(0, player.group.position.z - 3) * 0.15 : 0);
     target.x += (Math.random() - 0.5) * error; target.z += (Math.random() - 0.5) * error;
-    launchBall(ball.position.clone(), shotVelocity(ball.position, target, shot)); cpu.receive();
+    const velocity = volley ? volleyVelocity(ball.position, target, volleyStyle(shot, ball.velocity.length(), ball.position.y)) : shotVelocity(ball.position, target, shot);
+    launchBall(ball.position.clone(), velocity); cpu.receive();
     const quality = contactQuality(distance, ball.position.y);
-    audio.play(shot); shotEffect(); feedback(`${shot === 'drive' ? 'DRIVE' : 'DINK'} · ${contactText[quality]}`, quality === 'sweet');
-    match.message = shot === 'drive' ? '드라이브! 빠르고 낮게 보냅니다.' : '딩크! 상대 키친에 짧게 보내보세요.';
+    audio.play(shot); shotEffect(); feedback(`${volley ? (shot === 'drive' ? 'VOLLEY' : 'SOFT VOLLEY') : shot === 'drive' ? 'DRIVE' : 'DINK'} · ${contactText[quality]}`, quality === 'sweet');
+    match.message = volley ? (shot === 'drive' ? '발리! 공중에서 빠르게 받아쳤습니다.' : '부드러운 발리! 짧은 코스를 조준하세요.') : shot === 'drive' ? '드라이브! 빠르고 낮게 보냅니다.' : '딩크! 상대 키친에 짧게 보내보세요.';
   }
   canvas.addEventListener('pointerdown', event => {
     if (event.button === 0 || event.button === 2) { event.preventDefault(); hit(event.button === 0 ? 'drive' : 'dink'); }
@@ -376,16 +388,23 @@ function boot() {
         if (event === 'bounce' || event === 'out' || event === 'double-bounce') groundEffect();
         if (event === 'bounce' || event === 'out' || event === 'double-bounce') match.bounce(ball.position, ball.bounces);
       }
+      contactPoseTime = Math.max(0, contactPoseTime - step); cpuContactTime = Math.max(0, cpuContactTime - step);
+      if (pendingHit) {
+        pendingHit.remaining -= step;
+        if (match.phase !== 'rally') pendingHit = null;
+        else if (pendingHit.remaining <= 0) { const shot = pendingHit.shot; pendingHit = null; contactHit(shot); }
+      }
       if (match.phase === 'rally') {
         const previousZ = cpu.position.z;
-        const reply = cpu.update(step, ball, player.group.position, match.receiver === 'cpu');
+        const reply = cpu.update(step, ball, player.group.position, match.receiver === 'cpu', match.hits >= 3 && !match.bounceRequired.cpu);
         match.updateFeet('cpu', cpu.position, step, cpu.position.z > previousZ + 0.00001);
         if (reply && match.phase === 'rally') {
           if (reply.missed) { match.message = 'CPU가 헛스윙했습니다!'; audio.play('miss'); }
           else if (match.hit('cpu', cpu.position, ball.bounces)) {
-            launchBall(ball.position.clone(), shotVelocity(ball.position, reply.target, reply.shot));
+            cpuContact.copy(ball.position); cpuContactTime = 0.11;
+            launchBall(ball.position.clone(), reply.volley ? volleyVelocity(ball.position, reply.target, reply.volley) : shotVelocity(ball.position, reply.target, reply.shot));
             audio.play(reply.shot); shotEffect();
-            match.message = `CPU ${reply.shot === 'drive' ? '드라이브' : '딩크'}! 직접 받아치세요.`;
+            match.message = `CPU ${reply.volley ? '발리' : reply.shot === 'drive' ? '드라이브' : '딩크'}! 직접 받아치세요.`;
           }
         }
       } else {
@@ -469,8 +488,8 @@ function boot() {
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }
-    animateAthlete(player, { walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
-    animateAthlete(opponent, { walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status === '딩크' ? 'dink' : 'drive', lateral: 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
+    animateAthlete(player, { contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
+    animateAthlete(opponent, { contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
     trailTime += dt;
     if (trailTime >= 0.025) {
       trailTime = 0; trailPositions.copyWithin(0, 3); ball.position.toArray(trailPositions, (trailCount - 1) * 3);
