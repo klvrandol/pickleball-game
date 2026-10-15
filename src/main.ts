@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createAthlete, animateAthlete } from './athlete';
 import './style.css';
 import { CpuPlayer } from './cpu';
 import { GameAudio } from './audio';
@@ -69,37 +70,9 @@ function boot() {
     scene.add(tape);
   }
 
-  function person(color: number, z: number, facing: number) {
-    const group = new THREE.Group();
-    group.position.set(0, 0.045, z);
-    group.rotation.y = facing;
-    const body = new THREE.Group(); group.add(body);
-    const torso = box(0.48, 0.59, 0.28, color, 0, 1.03);
-    body.add(torso);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 12), new THREE.MeshStandardMaterial({ color: 0xefc5a0 }));
-    head.position.y = 1.53; head.castShadow = true; body.add(head);
-    body.add(box(0.38, 0.09, 0.36, color, 0, 1.66));
-    body.add(box(0.38, 0.035, 0.19, color, 0, 1.63, -0.2));
-    body.add(box(0.45, 0.23, 0.3, 0x23434b, 0, 0.65));
-    const legs = [-1, 1].map(side => {
-      const pivot = new THREE.Group(); pivot.position.set(side * 0.13, 0.6, 0);
-      pivot.add(box(0.14, 0.45, 0.16, 0xefc5a0, 0, -0.22));
-      pivot.add(box(0.19, 0.12, 0.32, 0xf8f6e8, 0, -0.5, -0.055));
-      body.add(pivot); return pivot;
-    });
-    const arms = [-1, 1].map(side => {
-      const pivot = new THREE.Group(); pivot.position.set(side * 0.31, 1.25, 0);
-      pivot.add(box(0.13, 0.43, 0.14, 0xefc5a0, 0, -0.21));
-      body.add(pivot); return pivot;
-    });
-    const paddle = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.035, 20), new THREE.MeshStandardMaterial({ color: 0x173d45 }));
-    paddle.rotation.x = Math.PI / 2; paddle.scale.z = 1.25; paddle.position.set(0, -0.61, -0.04); arms[1].add(paddle);
-    arms[1].add(box(0.045, 0.18, 0.045, 0xe1c59b, 0, -0.45));
-    scene.add(group);
-    return { group, body, legs, arms };
-  }
-  const player = person(0x348ee0, 5, 0);
-  const opponent = person(0xf09355, -5, Math.PI);
+  const player = createAthlete('player', 5, 0);
+  const opponent = createAthlete('cpu', -5, Math.PI);
+  scene.add(player.group, opponent.group);
   const cpu = new CpuPlayer();
   // Simple scenery frames the court without external assets.
   for (const x of [-8.5, 8.5]) for (const z of [-9, 0, 9]) {
@@ -344,19 +317,6 @@ function boot() {
   camera.position.set(1.8, 10.8, 16.8);
   let stride = 0, accumulator = 0, gameTime = 0;
   const impact = new THREE.Vector3();
-    function animatePerson(actor: ReturnType<typeof person>, walking: boolean, phase: number, swingLeft: number, shot: Shot, lateral: number, side: number, ready: boolean, dt: number) {
-      const blend = 1 - Math.exp(-18 * dt);
-      const legSwing = walking ? Math.sin(phase) * 0.42 : 0;
-      const progress = swingLeft > 0 ? Math.sin((1 - Math.min(1, swingLeft / 0.32)) * Math.PI) : 0;
-      actor.legs[0].rotation.x = THREE.MathUtils.lerp(actor.legs[0].rotation.x, legSwing, blend);
-      actor.legs[1].rotation.x = THREE.MathUtils.lerp(actor.legs[1].rotation.x, -legSwing, blend);
-      actor.arms[0].rotation.x = THREE.MathUtils.lerp(actor.arms[0].rotation.x, -legSwing * 0.4 + 0.1, blend);
-      actor.arms[1].rotation.x = THREE.MathUtils.lerp(actor.arms[1].rotation.x, 0.25 + progress * (shot === 'drive' ? 1.9 : 1.1) + legSwing * 0.2, blend);
-      actor.arms[1].rotation.z = THREE.MathUtils.lerp(actor.arms[1].rotation.z, side * progress * 0.65, blend);
-      actor.body.rotation.y = THREE.MathUtils.lerp(actor.body.rotation.y, side * progress * (shot === 'drive' ? 0.32 : 0.15), blend);
-      actor.body.rotation.z = THREE.MathUtils.lerp(actor.body.rotation.z, -lateral * 0.018, blend);
-      actor.body.position.y = reduceMotion ? 0 : (walking ? Math.abs(Math.sin(phase)) * 0.025 : Math.sin(gameTime * 2.4) * 0.006) - (ready ? 0.025 : 0);
-    }
   renderer.setAnimationLoop(() => {
     const elapsed = clock.getDelta();
     const realDt = document.hidden || paused ? 0 : Math.min(Math.max(elapsed, 0), 0.05);
@@ -500,8 +460,8 @@ function boot() {
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }
-    animatePerson(player, moving, stride, swingTimer, playerShot, playerVelocity.x, swingSide, reach, dt);
-    animatePerson(opponent, cpu.moving, cpu.stride, cpu.swing, cpu.status === '딩크' ? 'dink' : 'drive', 0, 1, match.phase === 'rally' && match.receiver === 'cpu', dt);
+    animateAthlete(player, { walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
+    animateAthlete(opponent, { walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status === '딩크' ? 'dink' : 'drive', lateral: 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
     trailTime += dt;
     if (trailTime >= 0.025) {
       trailTime = 0; trailPositions.copyWithin(0, 3); ball.position.toArray(trailPositions, (trailCount - 1) * 3);
