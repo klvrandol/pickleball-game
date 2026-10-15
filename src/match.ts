@@ -1,5 +1,11 @@
 export type Side = 'player' | 'cpu';
 export type Phase = 'idle' | 'ready' | 'drop' | 'rally' | 'settling' | 'between' | 'over';
+export interface RallyResult {
+  readonly kind: 'point' | 'sideout';
+  readonly side: Side;
+  readonly score: Readonly<{ player: number; cpu: number }>;
+  readonly matchWinner: Side | null;
+}
 export interface CourtPosition { x: number; z: number }
 export const HALF_WIDTH = 3.048;
 export const HALF_LENGTH = 6.7056;
@@ -23,6 +29,7 @@ export class SinglesMatch {
   server: Side = 'player';
   lastHitter: Side = 'player';
   winner: Side | null = null;
+  result: RallyResult | null = null;
   hits = 0;
   message = '경기 시작을 누르면 11점 단식 경기를 시작합니다.';
   bounceRequired = { player: true, cpu: true };
@@ -38,7 +45,7 @@ export class SinglesMatch {
     this.prepare();
   }
   prepare() {
-    this.phase = 'ready'; this.pending = null; this.hits = 0;
+    this.phase = 'ready'; this.pending = null; this.hits = 0; this.result = null;
     this.bounceRequired = { player: true, cpu: true }; this.serveLandingPending = false;
     this.watching = { player: false, cpu: false }; this.followThrough = { player: 0, cpu: 0 };
     this.message = `${sideName(this.server)} 서브 · ${this.score[this.server] % 2 === 0 ? '오른쪽' : '왼쪽'}에서 대각선으로!`;
@@ -115,7 +122,8 @@ export class SinglesMatch {
     this.settleTime -= dt;
     if (this.settleTime > 0 || this.watching.player || this.watching.cpu || !this.pending) return;
     const winner = other(this.pending.loser);
-    if (winner === this.server) {
+    const serverWon = winner === this.server;
+    if (serverWon) {
       this.score[winner]++;
       this.message += ` ${sideName(winner)} +1점.`;
     } else {
@@ -126,5 +134,6 @@ export class SinglesMatch {
       this.winner = winner; this.phase = 'over';
       this.message = `${winner === 'player' ? '승리했습니다!' : 'CPU가 승리했습니다.'} ${this.score.player} : ${this.score.cpu}`;
     } else this.phase = 'between';
+    this.result = { kind: serverWon ? 'point' : 'sideout', side: winner, score: { ...this.score }, matchWinner: this.winner };
   }
 }

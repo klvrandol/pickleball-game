@@ -5,7 +5,8 @@ import { CpuPlayer } from './cpu';
 import { GameAudio } from './audio';
 import { DEFAULT_GAME_SPEED, parseGameSpeed, simulationDelta } from './speed';
 import { landingPoint, contactQuality, contactText } from './feedback';
-import { SinglesMatch, endSign, inKitchen, inCourt } from './match';
+import { ResultNotice, resultTitle, resultDetail } from './result-notice';
+import { SinglesMatch, endSign, inKitchen, inCourt, type RallyResult } from './match';
 import { PracticeBall, BALL_RADIUS, launchVelocity, shotVelocity, type Shot } from './ball';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#court')!;
@@ -162,6 +163,11 @@ function boot() {
   const motionControl = document.querySelector<HTMLInputElement>('#reduce-motion')!;
   const pauseButton = document.querySelector<HTMLButtonElement>('#pause')!;
   const pauseOverlay = document.querySelector<HTMLElement>('#pause-overlay')!;
+  const resultNotice = new ResultNotice();
+  const resultPanel = document.querySelector<HTMLElement>('#result-notice')!;
+  const resultHeading = document.querySelector<HTMLElement>('#result-title')!;
+  const resultCopy = document.querySelector<HTMLElement>('#result-detail')!;
+  let handledResult: RallyResult | null = null;
   const toast = document.querySelector<HTMLElement>('#shot-feedback')!;
   const contactHint = document.querySelector<HTMLElement>('#contact-hint')!;
   const landingHint = document.querySelector<HTMLElement>('#landing-hint')!;
@@ -195,7 +201,7 @@ function boot() {
     paused = value; keys.clear(); playerVelocity.set(0, 0, 0);
     pauseOverlay.hidden = !paused; audio.setPaused(paused);
     pauseButton.setAttribute('aria-pressed', String(paused));
-    if (!paused) { audio.unlock(); (document.activeElement as HTMLElement)?.blur(); }
+    if (!paused) { clock.getDelta(); audio.unlock(); (document.activeElement as HTMLElement)?.blur(); }
   }
   pauseButton.addEventListener('click', () => setPaused(!paused));
   document.querySelector('#resume')!.addEventListener('click', () => setPaused(false));
@@ -213,12 +219,10 @@ function boot() {
   syncSound();
   const serviceBox = new THREE.Mesh(new THREE.PlaneGeometry(width / 2, halfLength - kitchen), new THREE.MeshBasicMaterial({ color: 0xffdf7d, transparent: true, opacity: 0.21, depthWrite: false }));
   serviceBox.rotation.x = -Math.PI / 2; scene.add(serviceBox);
-  let swingTimer = 0, hitCooldown = 0, nextPoint = 0, cpuServeDelay = 0;
+  let swingTimer = 0, hitCooldown = 0, cpuServeDelay = 0;
   let announcedGameOver = false;
   let playerShot: Shot = 'drive', swingSide = 1;
   let lastPhase = match.phase;
-  let lastScore = { player: 0, cpu: 0 };
-  let lastServer = match.server;
   const keys = new Set<string>();
 
   function preparePoint() {
@@ -237,12 +241,12 @@ function boot() {
   }
   function startMatch() {
     audio.unlock(); paused = false; pauseOverlay.hidden = true; audio.setPaused(false); pauseButton.setAttribute('aria-pressed', 'false');
-    lastScore = { player: 0, cpu: 0 }; lastServer = 'player';
-    match.start(); announcedGameOver = false; overlay.hidden = true; nextPoint = 0;
+    resultNotice.clear(); resultPanel.hidden = true; handledResult = null;
+    match.start(); announcedGameOver = false; overlay.hidden = true;
     preparePoint(); (document.activeElement as HTMLElement)?.blur();
   }
   function dropServe() {
-    if (paused) return;
+    if (paused || resultNotice.active) return;
     if (match.server === 'player') audio.unlock();
     if (!match.drop()) return;
     const actor = match.server === 'player' ? player.group.position : cpu.position;
@@ -265,7 +269,7 @@ function boot() {
     if (server === 'player') cpu.receive(); else cpu.swing = 0.28;
   }
   function hit(shot: Shot) {
-    if (paused) return;
+    if (paused || resultNotice.active) return;
     audio.unlock();
     if (match.phase === 'ready' && match.server === 'player') { dropServe(); return; }
     if (hitCooldown > 0 || !['rally', 'drop'].includes(match.phase)) return;
@@ -302,7 +306,7 @@ function boot() {
   });
   window.addEventListener('keyup', event => keys.delete(event.code));
   window.addEventListener('blur', () => { keys.clear(); playerVelocity.set(0, 0, 0); setPaused(true); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { keys.clear(); playerVelocity.set(0, 0, 0); setPaused(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { keys.clear(); playerVelocity.set(0, 0, 0); setPaused(true); } else clock.getDelta(); });
   canvas.addEventListener('contextmenu', event => event.preventDefault());
   function resize() {
     renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
@@ -321,12 +325,13 @@ function boot() {
     const elapsed = clock.getDelta();
     const realDt = document.hidden || paused ? 0 : Math.min(Math.max(elapsed, 0), 0.05);
     const dt = simulationDelta(elapsed, gameSpeed, document.hidden || paused);
+    resultNotice.advance(elapsed, document.hidden || paused);
+    if (!paused && resultNotice.canPrepareServe(match.phase)) { resultNotice.clear(); preparePoint(); }
     gameTime += dt;
     const canMove = !paused && ['ready', 'drop', 'rally', 'settling'].includes(match.phase);
     movement.set(canMove ? Number(keys.has('KeyD')) - Number(keys.has('KeyA')) : 0, 0,
       canMove ? Number(keys.has('KeyS')) - Number(keys.has('KeyW')) : 0);
     hitCooldown = Math.max(0, hitCooldown - dt); swingTimer = Math.max(0, swingTimer - dt);
-    if (!paused && match.phase === 'between') { nextPoint += dt; if (nextPoint >= 2.2) { nextPoint = 0; preparePoint(); } }
     if (!paused && match.phase === 'ready' && match.server === 'cpu') { cpuServeDelay -= dt; if (cpuServeDelay <= 0) dropServe(); }
     if (pointerInside && !paused) {
       raycaster.setFromCamera(pointer, camera);
@@ -440,23 +445,27 @@ function boot() {
     pauseButton.disabled = ['idle', 'over'].includes(match.phase);
     if (match.phase !== lastPhase) {
       if (match.phase === 'settling' && !match.pending?.reason.includes('네트')) audio.play('fault');
-      if (match.phase === 'between' || match.phase === 'over') {
-        const scorer = match.score.player > lastScore.player ? 'player' : match.score.cpu > lastScore.cpu ? 'cpu' : null;
-        if (scorer) {
-          feedback(`${scorer === 'player' ? '나' : 'CPU'} +1 · ${match.score.player} : ${match.score.cpu}`, scorer === 'player');
-          if (!reduceMotion) (scorer === 'player' ? playerScore : cpuScore).animate([{ transform: 'scale(1.35)', color: '#2b9962' }, { transform: 'scale(1)', color: '#163e3c' }], { duration: 400 });
-          if (match.phase !== 'over') audio.play('point');
-        } else if (match.server !== lastServer) { feedback(`${match.server === 'player' ? '나' : 'CPU'}에게 서브권 이동`, match.server === 'player'); audio.play('sideout'); }
-      }
       lastPhase = match.phase;
     }
-    lastScore = { ...match.score }; lastServer = match.server;
+    if (match.result && match.result !== handledResult) {
+      handledResult = match.result;
+      resultNotice.show(match.result);
+      text(resultHeading, resultTitle(match.result)); text(resultCopy, resultDetail(match.result));
+      resultPanel.classList.toggle('cpu-result', match.result.side === 'cpu');
+      keys.clear(); playerVelocity.set(0, 0, 0); toastTime = 0;
+      if (match.result.kind === 'point' && !reduceMotion) {
+        (match.result.side === 'player' ? playerScore : cpuScore).animate([{ transform: 'scale(1.35)', color: '#2b9962' }, { transform: 'scale(1)', color: '#163e3c' }], { duration: 400 });
+      }
+      audio.play(match.result.matchWinner ? match.result.matchWinner === 'player' ? 'win' : 'lose' : match.result.kind === 'point' ? 'point' : 'sideout');
+    }
+    resultPanel.hidden = !resultNotice.active;
+    resultPanel.style.opacity = String(resultNotice.opacity);
     toastTime = Math.max(0, toastTime - dt); toast.classList.toggle('visible', toastTime > 0 && !paused);
     document.documentElement.classList.toggle('reduced-motion', reduceMotion);
     syncSound();
-    if (match.phase === 'over' && !announcedGameOver) {
-      announcedGameOver = true; keys.clear(); playerVelocity.set(0, 0, 0); audio.play(match.winner === 'player' ? 'win' : 'lose'); overlay.hidden = false;
-      document.querySelector('#overlay-title')!.textContent = match.winner === 'player' ? '승리했습니다!' : '다음 경기엔 이겨봐요';
+    if (match.phase === 'over' && !announcedGameOver && !resultNotice.active) {
+      announcedGameOver = true; keys.clear(); playerVelocity.set(0, 0, 0); overlay.hidden = false;
+      document.querySelector('#overlay-title')!.textContent = match.winner === 'player' ? 'YOU WIN!' : 'YOU LOSE!';
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }

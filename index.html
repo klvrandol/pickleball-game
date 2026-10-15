@@ -4,6 +4,7 @@
   <body>
     <main id="app">
       <div id="shot-feedback" role="status" aria-live="polite"></div>
+      <section id="result-notice" role="status" aria-live="polite" aria-atomic="true" hidden><div class="result-card"><span class="eyebrow">RALLY RESULT</span><h2 id="result-title"></h2><p id="result-detail"></p></div></section>
       <canvas id="court" aria-label="WASD로 파란색 선수를 움직이는 3D 피클볼 코트"></canvas>
       <header class="top"><div><span class="eyebrow">PICKLEBALL CLUB</span><h1>오늘도, 코트에서.</h1></div><div class="tools"><label class="speed-control" for="game-speed">게임 속도 <select id="game-speed"><option value="0.5">0.5배 · 천천히</option><option value="0.75" selected>0.75배 · 권장</option><option value="1">1배 · 기존 속도</option></select></label><span class="badge">05 / 소리와 움직임</span><div><button id="sound" type="button" aria-pressed="true">♪ 소리 켜짐</button><button id="pause" type="button" aria-pressed="false" disabled>일시정지 <span>P</span></button></div></div></header>
       <section class="players" aria-label="선수 정보"><span id="player-card"><i class="dot blue"></i>나 <strong class="score" id="player-score">0</strong><b>PLAYER</b></span><span class="versus"><span id="server-label">나 서브 · 오른쪽</span><br />랠리 <strong id="rally">0</strong></span><span id="cpu-card"><i class="dot red"></i>상대 <strong class="score" id="cpu-score">0</strong><b>CPU · <span id="cpu-status">준비</span></b></span></section>
