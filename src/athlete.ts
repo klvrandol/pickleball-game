@@ -1,3 +1,4 @@
+import { createRanger, animateRanger, rangerContact } from './ranger.ts';
 import * as THREE from 'three';
 import { cloneAthleteModel, type AthleteStyle } from './athlete-model.ts';
 import { contactBodyOffset } from './volley.ts';
@@ -40,6 +41,7 @@ function paddle(team: AthleteTeam) {
 
 /** The old primitive avatar is replaced entirely by the artist's skinned GLB mesh. */
 export function createAthlete(team: AthleteTeam, z: number, facing: number, style: AthleteStyle = team === 'player' ? 'sd' : 'classic'): Athlete {
+  if (style === 'ranger') return createRanger(team, z, facing, paddle(team));
   const { scene: model, animations } = cloneAthleteModel(style);
   const group = new THREE.Group(); group.name = `${team}-athlete`;
   group.position.set(0, 0.045, z); group.rotation.y = facing; group.add(model);
@@ -130,6 +132,7 @@ function plantedLegs(actor: Athlete, targets: THREE.Vector3[], lengths: number[]
 
 /** Layer racket contact IK over the GLB's native locomotion and skin weights. */
 export function posePaddleContact(actor: Athlete, target: THREE.Vector3, hand = 1, _clampReach = false, wristPose = new THREE.Quaternion(), armOnly = false) {
+  if (actor.style === 'ranger') { rangerContact(actor, target); return; }
   actor.group.updateWorldMatrix(true, true);
   const targets = actor.feet.map(position);
   const lengths = actor.legs.map((hip, i) => [position(hip).distanceTo(position(actor.knees[i])), position(actor.knees[i]).distanceTo(targets[i])]);
@@ -181,6 +184,7 @@ export function posePaddleContact(actor: Athlete, target: THREE.Vector3, hand = 
 }
 
 export function animateAthlete(actor: Athlete, pose: AthletePose) {
+  if (actor.style === 'ranger') { animateRanger(actor, pose); return; }
   const { walking, phase, lateral, forward = 0, dt, ready } = pose;
   const sideStep = walking && Math.abs(lateral) > Math.abs(forward) * 1.1;
   const run = walking && !sideStep && Math.hypot(lateral, forward) > 2.8;

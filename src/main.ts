@@ -77,7 +77,8 @@ async function boot() {
     scene.add(tape);
   }
 
-  const playerStyle = new URLSearchParams(location.search).get('player') === 'classic' ? 'classic' : 'sd';
+  const requestedStyle = new URLSearchParams(location.search).get('player');
+  const playerStyle = requestedStyle === 'classic' || requestedStyle === 'sd' ? requestedStyle : 'ranger';
   const player = createAthlete('player', 5, 0, playerStyle);
   const opponent = createAthlete('cpu', -5, Math.PI);
   scene.add(player.group, opponent.group);

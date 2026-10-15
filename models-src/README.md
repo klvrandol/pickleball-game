@@ -42,3 +42,19 @@ blender -b --python tools/build-sd-athlete.py
 ```
 
 Blender is a development-only tool. The generated GLB is included in the game build and requires no additional user download or paid service.
+
+## KayKit Ranger trial
+
+User-uploaded source: repository-root `Ranger.glb` (added in `291c057`).
+Runtime copy: `public/models/Ranger.glb`, byte-for-byte identical; original retained.
+Pack: KayKit Adventurers, Kay Lousberg — https://kaylousberg.itch.io/kaykit-adventurers (CC0).
+Embedded texture remains intact; no runtime CDN.
+
+Inspected GLB: eight skinned meshes, one skin `Rig_Medium`, 23 joints, **zero animation clips**.
+Hierarchy: root → hips → spine → chest → head; chest → upperarm.l/r → lowerarm.l/r → wrist.l/r → hand.l/r → handslot.l/r; hips → upperleg.l/r → lowerleg.l/r → foot.l/r → toes.l/r.
+Three.js sanitizes dots in node names (`hand.r` → `handr`).
+There are no Quaternius-style shoulder/finger bones. Local bind rotations differ.
+`src/ranger.ts` preserves these joints and skin weights, normalizes model forward/height/soles,
+mounts the paddle at the right-hand socket, and uses a dedicated gait and world-space arm-chain IK.
+Existing authored swing **paddle paths and timing**, not Quaternius bone tracks, are reused.
+This is an appearance trial; authored KayKit-specific clips/retargeting and joint limits remain future work.
