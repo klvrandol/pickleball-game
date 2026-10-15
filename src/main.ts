@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loadAthleteModel } from './athlete-model';
 import { createAthlete, animateAthlete } from './athlete';
 import './style.css';
 import { canContact, volleyVelocity, volleyStyle, SWING_CONTACT_DELAY } from './volley';
@@ -12,14 +13,17 @@ import { SinglesMatch, endSign, inKitchen, inCourt, type RallyResult } from './m
 import { PracticeBall, BALL_RADIUS, launchVelocity, shotVelocity, type Shot } from './ball';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#court')!;
-try {
-  boot();
-} catch (error) {
+boot().catch(error => {
   document.querySelector<HTMLElement>('#error')!.hidden = false;
+  document.querySelector<HTMLElement>('#error')!.textContent = '게임 또는 캐릭터를 불러오지 못했습니다. 새로고침해 주세요.';
   console.error(error);
-}
+});
 
-function boot() {
+async function boot() {
+  const startButton = document.querySelector<HTMLButtonElement>('#start')!;
+  startButton.disabled = true; startButton.textContent = '선수 모델 불러오는 중…';
+  await loadAthleteModel();
+  startButton.disabled = false; startButton.textContent = '경기 시작';
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -497,8 +501,8 @@ function boot() {
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }
-    animateAthlete(player, { motion: playerMotion, contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
-    animateAthlete(opponent, { motion: cpu.motion, contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
+    animateAthlete(player, { motion: playerMotion, contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, forward: playerVelocity.z, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
+    animateAthlete(opponent, { motion: cpu.motion, contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: cpu.moving ? cpu.destination.x - cpu.position.x : 0, forward: cpu.moving ? -(cpu.destination.z - cpu.position.z) : 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
     trailTime += dt;
     if (trailTime >= 0.025) {
       trailTime = 0; trailPositions.copyWithin(0, 3); ball.position.toArray(trailPositions, (trailCount - 1) * 3);

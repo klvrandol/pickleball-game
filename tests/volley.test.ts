@@ -1,3 +1,4 @@
+import './model-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
@@ -109,9 +110,11 @@ test('CPU selects a block for fast approaches and an attacking volley for high s
 
 test('low contact crouches with planted shoes rather than sinking feet into the court', () => {
   const actor = createAthlete('player', 3, 0);
+  const planted = actor.feet.map(foot => foot.getWorldPosition(new Vector3()));
   posePaddleContact(actor, new Vector3(0.3, 0.6, 2.5)); actor.group.updateWorldMatrix(true, true);
-  for (const foot of actor.feet) {
-    const ankle = foot.getWorldPosition(new Vector3());
-    assert.ok(Math.abs(ankle.y - 0.225) < 0.02);
+  for (let i = 0; i < actor.feet.length; i++) {
+    const ankle = actor.feet[i].getWorldPosition(new Vector3());
+    assert.ok(ankle.distanceTo(planted[i]) < 0.001);
+    assert.ok(ankle.y >= 0.045 && ankle.y < 0.12);
   }
 });
