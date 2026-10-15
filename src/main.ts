@@ -1,3 +1,4 @@
+import { createBallLocator } from './ball-locator.ts';
 import * as THREE from 'three';
 import { loadAthleteModel } from './athlete-model';
 import { createAthlete, animateAthlete } from './athlete';
@@ -101,6 +102,8 @@ async function boot() {
   const ballBody = new THREE.Mesh(new THREE.SphereGeometry(ballDisplayRadius, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffed20 }));
   const ballOutline = new THREE.Mesh(new THREE.SphereGeometry(ballDisplayRadius * 1.22, 24, 16), new THREE.MeshBasicMaterial({ color: 0x132b42, side: THREE.BackSide }));
   ballMesh.add(ballOutline, ballBody);
+  const ballLocator = createBallLocator(ballDisplayRadius);
+  ballMesh.add(ballLocator);
   scene.add(ballMesh);
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.16, 32), new THREE.MeshBasicMaterial({ color: 0x132b42, transparent: true, opacity: 0.65, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
@@ -344,7 +347,9 @@ async function boot() {
   const movement = new THREE.Vector3();
   const desiredCamera = new THREE.Vector3();
   const lookAt = new THREE.Vector3(0, 0.3, -1.4);
-  camera.position.set(1.8, 10.8, 16.8);
+  const cameraHeight = player.style === 'ranger' ? 11.4 : 10.8;
+  const cameraDistance = player.style === 'ranger' ? 15.9 : 15.5;
+  camera.position.set(1.8, cameraHeight, cameraDistance + player.group.position.z * .26);
   let stride = 0, accumulator = 0, gameTime = 0;
   const impact = new THREE.Vector3();
   renderer.setAnimationLoop(() => {
@@ -517,8 +522,9 @@ async function boot() {
     hitRing.scale.setScalar(1 + (1 - hitPulse / 0.18) * 4); hitRing.material.opacity = hitPulse / 0.18;
     bounceRing.visible = !reduceMotion && bouncePulse > 0;
     bounceRing.scale.setScalar(1 + (1 - bouncePulse / 0.32) * 5); bounceRing.material.opacity = bouncePulse / 0.32;
-    desiredCamera.set(player.group.position.x * 0.23 + 1.8, 10.8, 15.5 + player.group.position.z * 0.26);
+    desiredCamera.set(player.group.position.x * 0.23 + 1.8, cameraHeight, cameraDistance + player.group.position.z * 0.26);
     camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * realDt)); camera.lookAt(lookAt);
+    ballLocator.quaternion.copy(camera.quaternion);
     renderer.render(scene, camera);
   });
 }

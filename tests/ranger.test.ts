@@ -6,6 +6,8 @@ import { Vector3, SkinnedMesh, Box3 } from 'three';
 import { installAthleteModel } from '../src/athlete-model.ts';
 import { createAthlete, animateAthlete } from '../src/athlete.ts';
 import { SwingMotion } from '../src/swing.ts';
+import { RANGER_DISPLAY_SCALE } from '../src/ranger.ts';
+import { canContact } from '../src/volley.ts';
 import { SWING_PROFILES } from '../src/swing-keyframes.ts';
 
 // Node has no image decoder. Preserve all original geometry/skin buffers; only omit
@@ -29,16 +31,20 @@ test('Ranger uses original KayKit skin, real right-hand socket, court scale and 
  assert.equal(meshes.length,8);assert.equal(meshes[0].skeleton.bones.length,23);
  const bounds=new Box3().setFromObject(a.model,true);
  assert.ok(Math.abs(bounds.min.y-.045)<.015,`soles ${bounds.min.y}`);
- assert.ok(bounds.max.y>1.7&&bounds.max.y<1.95);
+ assert.equal(RANGER_DISPLAY_SCALE,.65);
+ assert.ok(Math.abs(bounds.max.y-.045-1.8*.65)<.02,`height ${bounds.max.y}`);
+ assert.deepEqual(a.group.scale.toArray(),[1,1,1]);
+ const paddleScale=a.paddle.getWorldScale(new Vector3());assert.ok(Math.abs(paddleScale.x-.65)<1e-5);
+ assert.ok(canContact(a.group.position,new Vector3(.35,1.65,2.45)));
 });
 test('six Ranger strokes meet the actual paddle face at impact and do not move gameplay feet/root',()=>{
  const a=createAthlete('player',3,0,'ranger'),root=a.group.position.clone();
- for(const profile of SWING_PROFILES){
-  const ball=new Vector3(profile.hand==='forehand'?.35:-.35,1.15,2.45),motion=new SwingMotion();
+ for(const height of [.55,1.15,1.65])for(const profile of SWING_PROFILES){
+  const ball=new Vector3(profile.hand==='forehand'?.35:-.35,height,2.45),motion=new SwingMotion();
   motion.begin(a.group.position,ball,0,profile.kind==='dink'?'dink':'drive',profile.kind==='volley');motion.age=motion.contactAt;
   for(let i=0;i<3;i++)animateAthlete(a,{motion,walking:false,phase:0,swingLeft:0,shot:motion.shot,lateral:0,side:1,ready:true,dt:1/60,time:0,reduceMotion:false});
   const face=a.paddle.localToWorld(new Vector3(0,-.34,0));
-  assert.ok(face.distanceTo(ball)<.02,`${profile.id}: ${face.distanceTo(ball)}`);
+  assert.ok(face.distanceTo(ball)<.02,`${profile.id}/${height}: ${face.distanceTo(ball)}`);
   assert.deepEqual(a.group.position.toArray(),root.toArray());
   for(const bone of a.bind.keys())assert.ok(bone.matrixWorld.elements.every(Number.isFinite));
  }

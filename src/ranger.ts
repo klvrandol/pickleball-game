@@ -3,6 +3,8 @@ import { cloneAthleteModel } from './athlete-model.ts';
 import type { Athlete, AthletePose, AthleteTeam } from './athlete.ts';
 import { swingPose } from './swing.ts';
 
+// Presentation scale only. The group root and canContact() envelope stay in game units.
+export const RANGER_DISPLAY_SCALE = .65;
 const point = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3());
 /** KayKit's own 23-bone rig: no renaming, Quaternius tracks, or bind-axis assumptions. */
 export function createRanger(team: AthleteTeam, z: number, facing: number, paddle: THREE.Group): Athlete {
@@ -13,7 +15,7 @@ export function createRanger(team: AthleteTeam, z: number, facing: number, paddl
   model.rotation.y=Math.PI;
   group.updateMatrixWorld(true);
   model.traverse(o=>{if(o instanceof THREE.SkinnedMesh)o.skeleton.update();});
-  const box=new THREE.Box3().setFromObject(model,true), scale=1.8/(box.max.y-box.min.y);
+  const box=new THREE.Box3().setFromObject(model,true), scale=(1.8*RANGER_DISPLAY_SCALE)/(box.max.y-box.min.y);
   model.scale.setScalar(scale); model.position.y=-(box.min.y-group.position.y)*scale;
   const bone=(name:string)=>{
     const b=model.getObjectByName(name);
@@ -28,7 +30,7 @@ export function createRanger(team: AthleteTeam, z: number, facing: number, paddl
   paddle.position.copy(slot.position);
   paddle.rotation.z=Math.PI;
   group.updateWorldMatrix(true,true);
-  paddle.scale.setScalar(1/wrists[1].getWorldScale(new THREE.Vector3()).x);
+  paddle.scale.setScalar(RANGER_DISPLAY_SCALE/wrists[1].getWorldScale(new THREE.Vector3()).x);
   const bind:Athlete['bind']=new Map();
   model.traverse(o=>{if(o instanceof THREE.Bone)bind.set(o,{position:o.position.clone(),quaternion:o.quaternion.clone()});});
   const actor:Athlete={style:'ranger',team,group,model,paddle,paddleReach:.41,
@@ -59,7 +61,30 @@ function reach(actor:Athlete,target:THREE.Vector3,right:boolean) {
     if(face().distanceTo(target)<.001)break;
   }
 }
-export function rangerContact(actor:Athlete,target:THREE.Vector3) {reach(actor,target,true);}
+function contactReach(actor:Athlete,target:THREE.Vector3) {
+  actor.group.updateWorldMatrix(true,true);
+  const chain=[actor.arms[1],actor.elbows[1],actor.model.getObjectByName('wristr')!,actor.wrists[1]];
+  let reachLength=point(chain[3]).distanceTo(actor.paddle.localToWorld(new THREE.Vector3(0,-.34,0)));
+  for(let i=1;i<chain.length;i++)reachLength+=point(chain[i-1]).distanceTo(point(chain[i]));
+  const direction=target.clone().sub(point(chain[0]));
+  const excess=direction.length()-reachLength*.82+.015;
+  if(excess>0){
+    // A small visual torso reach retains high-ball contact after shrinking the skin.
+    // Hips, legs, gameplay root and contact eligibility never move with this correction.
+    const spine=actor.model.getObjectByName('spine')!;
+    const wanted=point(spine).add(direction.normalize().multiplyScalar(Math.min(.12,excess)));
+    spine.position.copy(spine.parent!.worldToLocal(wanted));
+  }
+  actor.group.updateWorldMatrix(true,true);
+  const distance=target.distanceTo(point(chain[0]));
+  const armLength=point(chain[0]).distanceTo(point(chain[1]))+point(chain[1]).distanceTo(point(chain[2]));
+  // Presentation-only stretchy IK for occasional high/far contacts. This preserves
+  // the original game envelope without enlarging the head/body or moving the feet.
+  const stretch=THREE.MathUtils.clamp(1+(distance-reachLength*.88)/armLength,1,3.6);
+  chain[1].position.multiplyScalar(stretch);chain[2].position.multiplyScalar(stretch);
+  reach(actor,target,true);
+}
+export function rangerContact(actor:Athlete,target:THREE.Vector3) {contactReach(actor,target);}
 export function animateRanger(actor:Athlete,pose:AthletePose) {
   for(const [b,base]of actor.bind){b.position.copy(base.position);b.quaternion.copy(base.quaternion);}
   // Rig-specific gait; source GLB contains no animation clips. Never run Man_* clips.
@@ -69,7 +94,7 @@ export function animateRanger(actor:Athlete,pose:AthletePose) {
     actor.feet[i].rotateX(-step*.08);
   }
   const motion=pose.motion?.active?pose.motion:null;
-  let target=new THREE.Vector3(.32,1.03,-.40);
+  let target=new THREE.Vector3(.32,1.03,-.40).multiplyScalar(RANGER_DISPLAY_SCALE);
   if(motion){
     const swing=swingPose(motion);target.copy(swing.target);
     const weight=Math.sin(Math.PI*motion.clipTime);
@@ -77,13 +102,14 @@ export function animateRanger(actor:Athlete,pose:AthletePose) {
     actor.model.getObjectByName('spine')!.rotateY(swing.twist*.35*weight);
     actor.chest.rotateY(swing.twist*.35*weight+motion.aimYaw*.3*weight);
     // Separate free-arm counterbalance; no foreign local-space animation tracks.
-    const support=actor.group.localToWorld(new THREE.Vector3(-.30,1.02+swing.support*.12,-.24));
+    const support=actor.group.localToWorld(new THREE.Vector3(-.30,1.02+swing.support*.12,-.24).multiplyScalar(RANGER_DISPLAY_SCALE));
     reach(actor,support,false);
   }else{
-    reach(actor,actor.group.localToWorld(new THREE.Vector3(-.30,1.02,-.24)),false);
+    reach(actor,actor.group.localToWorld(new THREE.Vector3(-.30,1.02,-.24).multiplyScalar(RANGER_DISPLAY_SCALE)),false);
   }
   actor.group.updateWorldMatrix(true,true);
-  reach(actor,pose.contact??actor.group.localToWorld(target),true);
+  const worldTarget=pose.contact??actor.group.localToWorld(target);
+  if(motion||pose.contact)contactReach(actor,worldTarget);else reach(actor,worldTarget,true);
   actor.group.updateMatrixWorld(true);
   actor.model.traverse(o=>{if(o instanceof THREE.SkinnedMesh)o.skeleton.update();});
 }
