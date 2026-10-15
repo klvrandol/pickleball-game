@@ -34,7 +34,7 @@ export class PracticeBall {
   }
 
   /** Called at a fixed small timestep so contacts cannot tunnel between frames. */
-  step(dt: number): BallEvent | undefined {
+  step(dt: number, allowOutsideBounce = false): BallEvent | undefined {
     if (!this.active) return;
     const oldY = this.position.y, oldZ = this.position.z;
     this.position.addScaledVector(this.velocity, dt);
@@ -55,9 +55,9 @@ export class PracticeBall {
       this.position.y = FLOOR;
       this.bounces++;
       const out = Math.abs(this.position.x) > 3.048 + 0.0254 + BALL_RADIUS || Math.abs(this.position.z) > 6.7056 + 0.0254 + BALL_RADIUS;
-      if (out || this.bounces >= 2) {
+      if ((!allowOutsideBounce && out) || this.bounces >= 2) {
         this.active = false;
-        return out ? 'out' : 'double-bounce';
+        return this.bounces >= 2 ? 'double-bounce' : 'out';
       }
       this.velocity.y *= -0.74;
       this.velocity.x *= 0.86; this.velocity.z *= 0.86;

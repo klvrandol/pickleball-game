@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import './style.css';
 import { CpuPlayer } from './cpu';
+import { SinglesMatch, endSign, inKitchen } from './match';
 import { PracticeBall, BALL_RADIUS, launchVelocity, shotVelocity, type Shot } from './ball';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#court')!;
@@ -126,60 +127,91 @@ function boot() {
     pointerInside = true;
   });
   canvas.addEventListener('pointerleave', () => { pointerInside = false; });
+  const match = new SinglesMatch();
   const message = document.querySelector<HTMLElement>('#message')!;
   const readiness = document.querySelector<HTMLElement>('#readiness')!;
-  let pendingFeed = 0.8, swingTimer = 0, hitCooldown = 0;
-  let returned = false, rallyActive = false, rallyHits = 0;
   const rallyLabel = document.querySelector<HTMLElement>('#rally')!;
   const cpuLabel = document.querySelector<HTMLElement>('#cpu-status')!;
-  function feed() {
-    const from = new THREE.Vector3(0, 1.25, -4.5);
-    const target = new THREE.Vector3(THREE.MathUtils.clamp(player.group.position.x, -2.3, 2.3), 0, 4);
-    ball.launch(from, launchVelocity(from, target, 1.35));
-    pendingFeed = 0; returned = false; rallyActive = true; rallyHits = 0;
-    cpu.attempted = false; rallyLabel.textContent = '0';
-    message.textContent = 'CPU가 연습 공을 보냅니다. 받아쳐서 랠리를 이어가세요!';
+  const serveButton = document.querySelector<HTMLButtonElement>('#serve')!;
+  const overlay = document.querySelector<HTMLElement>('#match-overlay')!;
+  const playerScore = document.querySelector<HTMLElement>('#player-score')!;
+  const cpuScore = document.querySelector<HTMLElement>('#cpu-score')!;
+  const serviceBox = new THREE.Mesh(new THREE.PlaneGeometry(width / 2, halfLength - kitchen), new THREE.MeshBasicMaterial({ color: 0xffdf7d, transparent: true, opacity: 0.21, depthWrite: false }));
+  serviceBox.rotation.x = -Math.PI / 2; scene.add(serviceBox);
+  let swingTimer = 0, hitCooldown = 0, nextPoint = 0, cpuServeDelay = 0;
+  let announcedGameOver = false;
+  const keys = new Set<string>();
+
+  function preparePoint() {
+    match.prepare(); ball.active = false; keys.clear(); cpu.reset();
+    const from = match.servePosition, to = match.serveTarget;
+    if (match.server === 'player') {
+      player.group.position.set(from.x, 0.045, from.z);
+      cpu.position.set(to.x, 0.045, -5.8);
+    } else {
+      cpu.position.set(from.x, 0.045, from.z);
+      player.group.position.set(to.x, 0.045, 5.8);
+    }
+    aim.set(match.server === 'player' ? to.x : 0, 0.05, match.server === 'player' ? to.z : -4.8);
+    pointerInside = false; hitCooldown = 0; swingTimer = 0; cpuServeDelay = 1.2;
   }
-  function queueFeed(text: string) {
-    if (!rallyActive) return;
-    rallyActive = false; message.textContent = text;
-    pendingFeed = 2.2;
+  function startMatch() {
+    match.start(); announcedGameOver = false; overlay.hidden = true; nextPoint = 0;
+    preparePoint(); (document.activeElement as HTMLElement)?.blur();
+  }
+  function dropServe() {
+    if (!match.drop()) return;
+    const actor = match.server === 'player' ? player.group.position : cpu.position;
+    ball.launch(new THREE.Vector3(actor.x + endSign(match.server) * 0.32, 1.0, actor.z - endSign(match.server) * 0.25), new THREE.Vector3());
+    (document.activeElement as HTMLElement)?.blur();
   }
   function inReach() {
-    return rallyActive && ball.active && !returned && ball.position.z > 0 && ball.position.y >= 0.18 && ball.position.y <= 1.9 &&
+    const allowed = match.phase === 'rally' && match.receiver === 'player' || match.phase === 'drop' && match.server === 'player' && ball.bounces === 1;
+    return allowed && ball.active && ball.position.z > 0 && ball.position.y >= 0.16 && ball.position.y <= 1.9 &&
       Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z) <= 1.25;
   }
+  function launchServe() {
+    const actor = match.server === 'player' ? player.group.position : cpu.position;
+    const server = match.server;
+    if (!match.serve(server, actor)) return;
+    const destination = server === 'player' ? aim.clone() : new THREE.Vector3(match.serveTarget.x, 0, match.serveTarget.z);
+    const distance = Math.hypot(destination.x - ball.position.x, destination.z - ball.position.z);
+    ball.launch(ball.position.clone(), launchVelocity(ball.position, destination, Math.max(1.2, distance / 9.2)));
+    if (server === 'player') cpu.receive(); else cpu.swing = 0.28;
+  }
   function hit(shot: Shot) {
-    if (hitCooldown > 0) return;
+    if (match.phase === 'ready' && match.server === 'player') { dropServe(); return; }
+    if (hitCooldown > 0 || !['rally', 'drop'].includes(match.phase)) return;
     hitCooldown = 0.3; swingTimer = 0.28;
-    if (!inReach()) { message.textContent = '헛스윙! 공 가까이에서 높이와 타이밍을 맞춰보세요.'; return; }
+    if (!inReach()) { match.message = '헛스윙! 가까운 공의 높이와 타이밍을 맞춰보세요.'; return; }
+    if (match.phase === 'drop') { launchServe(); return; }
+    if (!match.hit('player', player.group.position, ball.bounces)) return;
     const target = aim.clone();
     const distance = Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z);
-    // Reaching/low contacts lose accuracy. Dinks become more reliable close to the net.
     const error = Math.max(0, distance - 0.85) * 1.8 + Math.max(0, 0.45 - ball.position.y) * 2 +
       (shot === 'dink' ? Math.max(0, player.group.position.z - 3) * 0.15 : 0);
-    target.x += (Math.random() - 0.5) * error;
-    target.z += (Math.random() - 0.5) * error;
-    ball.launch(ball.position.clone(), shotVelocity(ball.position, target, shot));
-    returned = true; cpu.receive(); rallyHits++; rallyLabel.textContent = String(rallyHits);
-    message.textContent = shot === 'drive' ? '드라이브! 빠르고 낮게 보냅니다.' : '딩크! 짧은 공은 상대 키친을 조준하세요.';
+    target.x += (Math.random() - 0.5) * error; target.z += (Math.random() - 0.5) * error;
+    ball.launch(ball.position.clone(), shotVelocity(ball.position, target, shot)); cpu.receive();
+    match.message = shot === 'drive' ? '드라이브! 빠르고 낮게 보냅니다.' : '딩크! 상대 키친에 짧게 보내보세요.';
   }
   canvas.addEventListener('pointerdown', event => {
     if (event.button === 0 || event.button === 2) { event.preventDefault(); hit(event.button === 0 ? 'drive' : 'dink'); }
   });
-  document.querySelector('#feed')!.addEventListener('click', () => {
-    feed(); (document.activeElement as HTMLElement)?.blur();
-  });
-  const keys = new Set<string>();
+  serveButton.addEventListener('click', dropServe);
+  document.querySelector('#start')!.addEventListener('click', startMatch);
+  document.querySelector('#restart')!.addEventListener('click', startMatch);
   const validKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
   window.addEventListener('keydown', event => {
-    if (validKeys.includes(event.code) && !(event.target instanceof HTMLButtonElement)) { event.preventDefault(); keys.add(event.code); }
+    if (event.target instanceof HTMLButtonElement) return;
+    if (validKeys.includes(event.code)) { event.preventDefault(); keys.add(event.code); }
+    if (event.code === 'Space' && !event.repeat && match.server === 'player' && ['ready', 'drop'].includes(match.phase)) {
+      event.preventDefault(); dropServe();
+    }
   });
   window.addEventListener('keyup', event => keys.delete(event.code));
   window.addEventListener('blur', () => keys.clear());
   document.addEventListener('visibilitychange', () => { if (document.hidden) keys.clear(); });
   canvas.addEventListener('contextmenu', event => event.preventDefault());
-  document.querySelector('#reset')!.addEventListener('click', () => { player.group.position.set(0, 0.045, 5); keys.clear(); ball.active = false; pendingFeed = 0.8; returned = false; rallyActive = false; rallyHits = 0; rallyLabel.textContent = '0'; cpu.reset(); message.textContent = '위치를 초기화했습니다. 새 공을 준비합니다.'; (document.activeElement as HTMLElement)?.blur(); });
   function resize() {
     renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     camera.aspect = canvas.clientWidth / canvas.clientHeight;
@@ -194,72 +226,112 @@ function boot() {
   let stride = 0, accumulator = 0;
   const impact = new THREE.Vector3();
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.05);
-    movement.set(Number(keys.has('KeyD')) - Number(keys.has('KeyA')), 0, Number(keys.has('KeyS')) - Number(keys.has('KeyW')));
-    hitCooldown = Math.max(0, hitCooldown - dt);
-    swingTimer = Math.max(0, swingTimer - dt);
-    if (pendingFeed > 0) { pendingFeed -= dt; if (pendingFeed <= 0) feed(); }
+    const dt = document.hidden ? 0 : Math.min(clock.getDelta(), 0.05);
+    // Consume wall time even while the tab is hidden, so returning never jumps the ball.
+    if (document.hidden) clock.getDelta();
+    const canMove = ['ready', 'drop', 'rally', 'settling'].includes(match.phase);
+    movement.set(canMove ? Number(keys.has('KeyD')) - Number(keys.has('KeyA')) : 0, 0,
+      canMove ? Number(keys.has('KeyS')) - Number(keys.has('KeyW')) : 0);
+    hitCooldown = Math.max(0, hitCooldown - dt); swingTimer = Math.max(0, swingTimer - dt);
+    if (match.phase === 'between') { nextPoint += dt; if (nextPoint >= 2.2) { nextPoint = 0; preparePoint(); } }
+    if (match.phase === 'ready' && match.server === 'cpu') { cpuServeDelay -= dt; if (cpuServeDelay <= 0) dropServe(); }
     if (pointerInside) {
       raycaster.setFromCamera(pointer, camera);
-      if (raycaster.ray.intersectPlane(aimPlane, impact)) {
-        aim.set(THREE.MathUtils.clamp(impact.x, -3.45, 3.45), 0.05, THREE.MathUtils.clamp(impact.z, -7.1, -0.25));
-      }
+      if (raycaster.ray.intersectPlane(aimPlane, impact)) aim.set(THREE.MathUtils.clamp(impact.x, -3.45, 3.45), 0.05, THREE.MathUtils.clamp(impact.z, -7.1, -0.25));
     }
-    marker.position.copy(aim);
-    // Only nudge a nearby incoming ball's receiver; never trigger a shot.
-    if (rallyActive && ball.active && !returned && ball.position.z > 0 && ball.position.y < 2.2) {
-      const dx = ball.position.x - player.group.position.x;
-      const dz = ball.position.z - player.group.position.z;
+    marker.position.copy(aim); marker.visible = !['idle', 'over'].includes(match.phase);
+    serviceBox.visible = match.server === 'player' && ['ready', 'drop'].includes(match.phase);
+    serviceBox.position.set(match.serveTarget.x < 0 ? -width / 4 : width / 4, 0.047, -(halfLength + kitchen) / 2);
+    const oldPlayerZ = player.group.position.z;
+    const moving = movement.lengthSq() > 0;
+    if (moving) { movement.normalize(); player.group.position.addScaledVector(movement, 3.8 * dt); stride += dt * 11; }
+    // Movement assistance never serves or hits a ball, and cannot pull a volley into the kitchen.
+    if (match.phase === 'rally' && match.receiver === 'player' && ball.active && ball.position.z > 0 && ball.position.y < 2.2) {
+      const dx = ball.position.x - player.group.position.x, dz = ball.position.z - player.group.position.z;
       const distance = Math.hypot(dx, dz);
       if (distance > 0.65 && distance < 1.65) {
         player.group.position.x += dx / distance * Math.min(0.65 * dt, distance - 0.65);
-        player.group.position.z += dz / distance * Math.min(0.65 * dt, distance - 0.65);
+        if (ball.bounces > 0 || player.group.position.z > 2.6 && ball.position.z > 2.6)
+          player.group.position.z += dz / distance * Math.min(0.65 * dt, distance - 0.65);
       }
     }
+    player.group.position.x = THREE.MathUtils.clamp(player.group.position.x, -4.4, 4.4);
+    player.group.position.z = THREE.MathUtils.clamp(player.group.position.z, 0.55, 8.2);
     accumulator += dt;
     while (accumulator >= 1 / 120) {
-      const event = ball.step(1 / 120);
-      if (event === 'net') queueFeed(`${returned ? '나' : 'CPU'}의 공이 네트에 걸렸습니다. 새 랠리를 준비합니다.`);
-      if (event === 'out') queueFeed(ball.bounces >= 2 ? `${returned ? 'CPU가' : '내가'} 공을 놓쳤습니다. 새 랠리를 준비합니다.` : `${returned ? '나' : 'CPU'}의 공이 아웃되었습니다. 새 랠리를 준비합니다.`);
-      if (event === 'double-bounce') queueFeed(`${returned ? 'CPU가' : '내가'} 공을 놓쳤습니다. 두 번 바운드!`);
-      const reply = cpu.update(1 / 120, ball, player.group.position, rallyActive && returned);
-      if (reply) {
-        if (reply.missed) message.textContent = 'CPU가 어려운 공에 헛스윙했습니다!';
-        else {
-          ball.launch(ball.position.clone(), shotVelocity(ball.position, reply.target, reply.shot));
-          returned = false; rallyHits++; rallyLabel.textContent = String(rallyHits);
-          message.textContent = `CPU ${reply.shot === 'drive' ? '드라이브' : '딩크'}! 공을 따라 이동해 직접 받아치세요.`;
+      const step = 1 / 120;
+      if (match.phase === 'drop') {
+        const event = ball.step(step, true);
+        if (match.server === 'cpu' && ball.bounces === 1 && ball.position.y >= 0.24 && ball.active) launchServe();
+        else if (!ball.active && event) {
+          match.phase = 'ready'; cpuServeDelay = 0.5;
+          match.message = '서브 공을 놓쳤습니다. Space 또는 서브 준비로 다시 떨어뜨리세요.';
         }
+      } else if (match.phase === 'rally') {
+        const event = ball.step(step);
+        if (event === 'net') match.net();
+        if (event === 'bounce' || event === 'out' || event === 'double-bounce') match.bounce(ball.position, ball.bounces);
       }
-      accumulator -= 1 / 120;
+      if (match.phase === 'rally') {
+        const previousZ = cpu.position.z;
+        const reply = cpu.update(step, ball, player.group.position, match.receiver === 'cpu');
+        match.updateFeet('cpu', cpu.position, step, cpu.position.z > previousZ + 0.00001);
+        if (reply && match.phase === 'rally') {
+          if (reply.missed) match.message = 'CPU가 헛스윙했습니다!';
+          else if (match.hit('cpu', cpu.position, ball.bounces)) {
+            ball.launch(ball.position.clone(), shotVelocity(ball.position, reply.target, reply.shot));
+            match.message = `CPU ${reply.shot === 'drive' ? '드라이브' : '딩크'}! 직접 받아치세요.`;
+          }
+        }
+      } else {
+        cpu.moving = false; cpu.swing = Math.max(0, cpu.swing - step);
+        match.updateFeet('cpu', cpu.position, step, false);
+      }
+      match.updateFeet('player', player.group.position, step, player.group.position.z < oldPlayerZ - 0.00001);
+      match.tick(step);
+      if (['settling', 'between', 'over'].includes(match.phase)) ball.active = false;
+      accumulator -= step;
     }
     opponent.group.position.copy(cpu.position);
     const cpuSwing = cpu.moving ? Math.sin(cpu.stride) * 0.4 : 0;
     opponent.legs[0].rotation.x = cpuSwing; opponent.legs[1].rotation.x = -cpuSwing;
     opponent.arms[0].rotation.x = -cpuSwing * 0.5;
     opponent.arms[1].rotation.x = cpu.swing > 0 ? -Math.sin(cpu.swing / 0.28 * Math.PI) * 1.7 : cpuSwing * 0.5;
-    cpuLabel.textContent = cpu.status;
-    ballMesh.position.copy(ball.position); ballMesh.visible = ball.active || pendingFeed > 0;
-    shadow.position.set(ball.position.x, 0.05, ball.position.z);
-    shadow.visible = ballMesh.visible;
-    shadow.scale.setScalar(1 + ball.position.y * 0.15);
-    readiness.textContent = inReach() ? '● 지금 클릭하면 타격 가능' : '○ 공을 따라 이동하세요';
-    readiness.classList.toggle('ready', inReach());
-    const moving = movement.lengthSq() > 0;
-    if (moving) {
-      movement.normalize(); player.group.position.addScaledVector(movement, 3.8 * dt); stride += dt * 11;
+    cpuLabel.textContent = match.server === 'cpu' && ['ready', 'drop'].includes(match.phase) ? '서브 준비' : cpu.status;
+    if (match.phase === 'ready') {
+      const actor = match.server === 'player' ? player.group.position : cpu.position;
+      ball.position.set(actor.x + endSign(match.server) * 0.32, 1, actor.z - endSign(match.server) * 0.25);
     }
-    // Keep the player on their own side; allow space outside the lines.
-    player.group.position.x = THREE.MathUtils.clamp(player.group.position.x, -4.4, 4.4);
-    player.group.position.z = THREE.MathUtils.clamp(player.group.position.z, 0.55, 8.2);
+    ballMesh.position.copy(ball.position); ballMesh.visible = !['idle', 'over', 'between'].includes(match.phase);
+    shadow.position.set(ball.position.x, 0.05, ball.position.z); shadow.visible = ballMesh.visible;
+    shadow.scale.setScalar(1 + ball.position.y * 0.15);
+    const reach = inReach();
+    const mustBounce = match.phase === 'rally' && match.receiver === 'player' && match.bounceRequired.player;
+    const kitchenVolley = reach && match.phase === 'rally' && ball.bounces === 0 && inKitchen(player.group.position);
+    readiness.textContent = match.phase === 'ready' ? (match.server === 'player' ? 'Space 또는 클릭으로 서브 공 떨어뜨리기' : 'CPU 서브를 준비합니다') :
+      mustBounce ? '투바운스 룰 · 바운드를 기다리세요' : kitchenVolley ? '키친 안 · 바운드한 공만 타격 가능' :
+      reach ? '● 지금 클릭하면 타격 가능' : match.phase === 'rally' ? '○ 공을 따라 이동하세요' : match.phase === 'drop' ? '드롭 서브 · 바운드 후 클릭' : '11점 · 2점 차 승리 · 서버만 득점';
+    readiness.classList.toggle('ready', reach && !mustBounce && !kitchenVolley);
+    message.textContent = match.message;
+    rallyLabel.textContent = String(match.hits);
+    playerScore.textContent = String(match.score.player); cpuScore.textContent = String(match.score.cpu);
+    document.querySelector('#player-card')!.classList.toggle('serving', match.server === 'player');
+    document.querySelector('#cpu-card')!.classList.toggle('serving', match.server === 'cpu');
+    document.querySelector('#server-label')!.textContent = `${match.server === 'player' ? '나' : 'CPU'} 서브 · ${match.score[match.server] % 2 === 0 ? '오른쪽' : '왼쪽'}`;
+    serveButton.disabled = match.server !== 'player' || !['ready', 'drop'].includes(match.phase);
+    if (match.phase === 'over' && !announcedGameOver) {
+      announcedGameOver = true; keys.clear(); overlay.hidden = false;
+      document.querySelector('#overlay-title')!.textContent = match.winner === 'player' ? '승리했습니다!' : '다음 경기엔 이겨봐요';
+      document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
+      document.querySelector('#start')!.textContent = '다시 경기하기';
+    }
     const swing = moving ? Math.sin(stride) * 0.42 : 0;
     player.legs[0].rotation.x = swing; player.legs[1].rotation.x = -swing;
-    player.arms[0].rotation.x = -swing * 0.6; player.arms[1].rotation.x = swingTimer > 0 ? -Math.sin(swingTimer / 0.28 * Math.PI) * 1.7 - 0.2 : swing * 0.4 - 0.2;
+    player.arms[0].rotation.x = -swing * 0.6;
+    player.arms[1].rotation.x = swingTimer > 0 ? -Math.sin(swingTimer / 0.28 * Math.PI) * 1.7 - 0.2 : swing * 0.4 - 0.2;
     player.group.position.y = 0.045 + (moving ? Math.abs(Math.sin(stride)) * 0.025 : 0);
-    // Limited follow keeps the far baseline visible even near the net.
     desiredCamera.set(player.group.position.x * 0.23 + 1.8, 10.8, 15.5 + player.group.position.z * 0.26);
-    camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * dt));
-    camera.lookAt(lookAt);
+    camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * dt)); camera.lookAt(lookAt);
     renderer.render(scene, camera);
   });
 }
