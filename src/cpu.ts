@@ -1,6 +1,7 @@
 import { Vector3, MathUtils } from 'three';
 import { PracticeBall, type Shot } from './ball.ts';
 import { canContact, volleyStyle, type VolleyStyle, SWING_CONTACT_DELAY } from './volley.ts';
+import { SwingMotion } from './swing.ts';
 import { inKitchen } from './match.ts';
 
 export interface CpuShot { shot: Shot; target: Vector3; missed: boolean; volley?: VolleyStyle }
@@ -26,6 +27,7 @@ export function predictContact(ball: PracticeBall, position: Vector3, allowVolle
 }
 
 export class CpuPlayer {
+  motion = new SwingMotion();
   position = new Vector3(0, 0.045, -5);
   destination = new Vector3(0, 0, -4.5);
   reaction = 0;
@@ -41,6 +43,7 @@ export class CpuPlayer {
   constructor(random: () => number = Math.random) { this.random = random; }
 
   reset() {
+    this.motion.clear();
     this.position.set(0, 0.045, -5); this.destination.set(0, 0, -4.5);
     this.pending = null; this.volley = undefined; this.reaction = 0; this.attempted = false; this.swing = 0; this.status = '준비';
   }
@@ -50,6 +53,7 @@ export class CpuPlayer {
     this.refresh = 0; this.attempted = false; this.status = '반응 중';
   }
   update(dt: number, ball: PracticeBall, player: Vector3, receiving: boolean, allowVolley = false): CpuShot | undefined {
+    this.motion.advance(dt);
     this.swing = Math.max(0, this.swing - dt);
     if (this.pending) {
       this.moving = false;
@@ -60,6 +64,7 @@ export class CpuPlayer {
       if (!canContact(this.position, ball.position) || ball.bounces !== 0 || !allowVolley || inKitchen(this.position)) {
         this.status = '헛스윙'; return { ...reply, missed: true };
       }
+      if (!reply.missed) this.motion.impact(this.position, ball.position, Math.PI, true);
       return reply;
     }
     this.moving = false;
@@ -102,6 +107,7 @@ export class CpuPlayer {
       const z = (shot === 'dink' ? 1.5 : 4.5) + (this.random() - 0.5) * error;
       this.volley = volley ? volleyStyle(shot, ball.velocity.length(), ball.position.y) : undefined;
       this.status = missed ? '헛스윙' : volley ? (this.volley === 'soft' ? '부드러운 발리' : this.volley === 'block' ? '블록 발리' : '공격 발리') : shot === 'dink' ? '딩크' : '드라이브';
+      this.motion.begin(this.position, ball.position, Math.PI, shot, volley, volley ? SWING_CONTACT_DELAY : 0);
       const reply = { shot, target: new Vector3(x, 0, z), missed, volley: this.volley };
       if (volley) { this.pending = { reply, remaining: SWING_CONTACT_DELAY }; return; }
       return reply;

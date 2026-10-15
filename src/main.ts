@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createAthlete, animateAthlete } from './athlete';
 import './style.css';
 import { canContact, volleyVelocity, volleyStyle, SWING_CONTACT_DELAY } from './volley';
+import { SwingMotion } from './swing';
 import { CpuPlayer } from './cpu';
 import { GameAudio } from './audio';
 import { DEFAULT_GAME_SPEED, parseGameSpeed, simulationDelta } from './speed';
@@ -221,6 +222,7 @@ function boot() {
   const serviceBox = new THREE.Mesh(new THREE.PlaneGeometry(width / 2, halfLength - kitchen), new THREE.MeshBasicMaterial({ color: 0xffdf7d, transparent: true, opacity: 0.21, depthWrite: false }));
   serviceBox.rotation.x = -Math.PI / 2; scene.add(serviceBox);
   let swingTimer = 0, hitCooldown = 0, cpuServeDelay = 0;
+  const playerMotion = new SwingMotion();
   let pendingHit: { shot: Shot; remaining: number } | null = null;
   let contactPoseTime = 0;
   const playerContact = new THREE.Vector3(), cpuContact = new THREE.Vector3();
@@ -231,6 +233,7 @@ function boot() {
   const keys = new Set<string>();
 
   function preparePoint() {
+    playerMotion.clear();
     pendingHit = null; contactPoseTime = 0; cpuContactTime = 0;
     match.prepare(); ball.active = false; keys.clear(); cpu.reset(); playerVelocity.set(0, 0, 0);
     resetTrail(); hitPulse = 0; bouncePulse = 0; toastTime = 0;
@@ -270,6 +273,8 @@ function boot() {
     const destination = server === 'player' ? aim.clone() : new THREE.Vector3(match.serveTarget.x, 0, match.serveTarget.z);
     const distance = Math.hypot(destination.x - ball.position.x, destination.z - ball.position.z);
     launchBall(ball.position.clone(), launchVelocity(ball.position, destination, Math.max(1.2, distance / 9.2)));
+    const motion = server === 'player' ? playerMotion : cpu.motion;
+    motion.begin(actor, ball.position, server === 'player' ? 0 : Math.PI, 'drive', false, 0);
     audio.play('serve'); shotEffect(); feedback(server === 'player' ? 'SERVE · 대각선으로!' : 'CPU SERVE');
     if (server === 'player') cpu.receive(); else cpu.swing = 0.28;
   }
@@ -279,6 +284,7 @@ function boot() {
     if (match.phase === 'ready' && match.server === 'player') { dropServe(); return; }
     if (hitCooldown > 0 || !['rally', 'drop'].includes(match.phase)) return;
     hitCooldown = 0.3; swingTimer = 0.32; playerShot = shot;
+    playerMotion.begin(player.group.position, ball.position, 0, shot, match.phase === 'rally' && match.hits >= 3 && ball.bounces === 0);
     swingSide = ball.position.x >= player.group.position.x ? 1 : -1;
     if (!inReach()) { match.message = '헛스윙! 가까운 공의 높이와 타이밍을 맞춰보세요.'; audio.play('miss'); feedback('헛스윙 · 공 가까이에서 클릭!', false); return; }
     if (match.phase === 'drop') { launchServe(); return; }
@@ -288,6 +294,7 @@ function boot() {
     if (!inReach() || match.phase !== 'rally') { audio.play('miss'); feedback('헛스윙 · 공이 타격 범위를 벗어났어요', false); return; }
     const volley = ball.bounces === 0;
     if (!match.hit('player', player.group.position, ball.bounces)) return;
+    playerMotion.impact(player.group.position, ball.position, 0, volley);
     playerContact.copy(ball.position); contactPoseTime = 0.11;
     const target = aim.clone();
     const distance = Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z);
@@ -388,6 +395,7 @@ function boot() {
         if (event === 'bounce' || event === 'out' || event === 'double-bounce') groundEffect();
         if (event === 'bounce' || event === 'out' || event === 'double-bounce') match.bounce(ball.position, ball.bounces);
       }
+      playerMotion.advance(step);
       contactPoseTime = Math.max(0, contactPoseTime - step); cpuContactTime = Math.max(0, cpuContactTime - step);
       if (pendingHit) {
         pendingHit.remaining -= step;
@@ -408,6 +416,7 @@ function boot() {
           }
         }
       } else {
+        cpu.motion.advance(step);
         cpu.moving = false; cpu.swing = Math.max(0, cpu.swing - step);
         match.updateFeet('cpu', cpu.position, step, false);
       }
@@ -488,8 +497,8 @@ function boot() {
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }
-    animateAthlete(player, { contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
-    animateAthlete(opponent, { contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
+    animateAthlete(player, { motion: playerMotion, contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
+    animateAthlete(opponent, { motion: cpu.motion, contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
     trailTime += dt;
     if (trailTime >= 0.025) {
       trailTime = 0; trailPositions.copyWithin(0, 3); ball.position.toArray(trailPositions, (trailCount - 1) * 3);

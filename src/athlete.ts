@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { contactBodyOffset } from './volley.ts';
+import { swingPose, type SwingMotion } from './swing.ts';
 import type { Shot } from './ball.ts';
 
 export type AthleteTeam = 'player' | 'cpu';
@@ -34,6 +35,7 @@ const blade = new THREE.ExtrudeGeometry(bladeShape, { depth: 0.025, bevelEnabled
 const bladeFace = new THREE.ShapeGeometry(bladeShape, 4);
 
 export interface Athlete {
+  team: AthleteTeam;
   group: THREE.Group;
   body: THREE.Group;
   chest: THREE.Group;
@@ -160,10 +162,11 @@ export function createAthlete(team: AthleteTeam, z: number, facing: number): Ath
     soft(paddle, 'jersey', 0, -0.37, z + Math.sign(z) * 0.002, 0.23, 0.035, 0.005, false).rotation.z = -0.4;
     soft(paddle, 'white', 0, -0.28, z + Math.sign(z) * 0.002, 0.075, 0.012, 0.005, false);
   }
-  return { group, body, chest, head, legs, knees, feet, arms, elbows, paddle };
+  return { team, group, body, chest, head, legs, knees, feet, arms, elbows, paddle };
 }
 
 export interface AthletePose {
+  motion?: SwingMotion;
   contact?: THREE.Vector3; contactBlend?: number;
   walking: boolean; phase: number; swingLeft: number; shot: Shot;
   lateral: number; side: number; ready: boolean; dt: number; time: number; reduceMotion: boolean;
@@ -179,6 +182,9 @@ export function animateAthlete(actor: Athlete, pose: AthletePose) {
     actor.feet[i].rotation.x = THREE.MathUtils.lerp(actor.feet[i].rotation.x, Math.max(0, -stride) * 0.20, blend);
     actor.elbows[i].rotation.x = THREE.MathUtils.lerp(actor.elbows[i].rotation.x, 0.17 + (ready ? 0.18 : 0) + (i === 1 ? swing * 0.25 : 0), blend);
   }
+  actor.arms[0].rotation.z *= 1 - blend;
+  actor.arms[1].rotation.y *= 1 - blend;
+  for (const elbow of actor.elbows) { elbow.rotation.y *= 1 - blend; elbow.rotation.z *= 1 - blend; }
   actor.arms[0].rotation.x = THREE.MathUtils.lerp(actor.arms[0].rotation.x, Math.sin(phase) * (walking ? -0.18 : 0) + 0.12, blend);
   actor.arms[1].rotation.x = THREE.MathUtils.lerp(actor.arms[1].rotation.x, 0.22 + swing * (shot === 'drive' ? 1.65 : 0.85), blend);
   actor.arms[1].rotation.z = THREE.MathUtils.lerp(actor.arms[1].rotation.z, side * swing * 0.40, blend);
@@ -187,7 +193,26 @@ export function animateAthlete(actor: Athlete, pose: AthletePose) {
   actor.body.rotation.z = THREE.MathUtils.lerp(actor.body.rotation.z, -lateral * 0.014, blend);
   actor.body.position.y = THREE.MathUtils.lerp(actor.body.position.y, reduceMotion ? 0 : (walking ? Math.abs(Math.sin(phase)) * 0.018 : Math.sin(time * 2.4) * 0.005), blend);
   actor.chest.position.x *= 1 - blend; actor.chest.position.z *= 1 - blend;
-  if (pose.contact) {
+  if (pose.motion?.active) {
+    const motion = swingPose(pose.motion, actor.team === 'cpu');
+    actor.chest.rotation.y = motion.twist;
+    actor.head.rotation.y = -motion.twist * 0.45;
+    actor.arms[0].rotation.x = 0.2 + motion.support * motion.recovery;
+    actor.arms[0].rotation.z = -motion.hand * 0.22 * motion.recovery;
+    const arm = actor.arms[1].quaternion.clone(), elbow = actor.elbows[1].quaternion.clone();
+    const body = actor.body.position.clone(), chest = actor.chest.position.clone();
+    const joints = [...actor.legs, ...actor.knees, ...actor.feet];
+    const rotations = joints.map(joint => joint.quaternion.clone());
+    actor.group.updateWorldMatrix(true, false);
+    const target = actor.group.localToWorld(motion.target.clone());
+    posePaddleContact(actor, target, motion.hand, true);
+    const weight = motion.recovery;
+    actor.arms[1].quaternion.slerpQuaternions(arm, actor.arms[1].quaternion.clone(), weight);
+    actor.elbows[1].quaternion.slerpQuaternions(elbow, actor.elbows[1].quaternion.clone(), weight);
+    actor.body.position.lerpVectors(body, actor.body.position.clone(), weight);
+    actor.chest.position.lerpVectors(chest, actor.chest.position.clone(), weight);
+    joints.forEach((joint, i) => joint.quaternion.slerpQuaternions(rotations[i], joint.quaternion.clone(), weight));
+  } else if (pose.contact) {
     const arm = actor.arms[1].quaternion.clone(), elbow = actor.elbows[1].quaternion.clone();
     const body = actor.body.position.clone(), chest = actor.chest.position.clone();
     const joints = [...actor.legs, ...actor.knees, ...actor.feet];
@@ -203,7 +228,7 @@ export function animateAthlete(actor: Athlete, pose: AthletePose) {
 }
 
 /** Two-link shoulder/elbow pose places the paddle face at the real ball contact. */
-export function posePaddleContact(actor: Athlete, target: THREE.Vector3) {
+export function posePaddleContact(actor: Athlete, target: THREE.Vector3, hand = 1, clampReach = false) {
   actor.group.updateWorldMatrix(true, true);
   const relative = actor.group.worldToLocal(target.clone());
   // A small visual lunge and knee bend extend the reach without teleporting the feet.
@@ -221,12 +246,14 @@ export function posePaddleContact(actor: Athlete, target: THREE.Vector3) {
   const direction = local.clone();
   const distance = direction.length();
   const upper = 0.26, lower = 0.61;
-  if (distance < 0.05 || distance > upper + lower + 0.15) return;
+  if (distance < 0.05 || (!clampReach && distance > upper + lower + 0.15)) return;
   direction.normalize();
   const d = THREE.MathUtils.clamp(distance, lower - upper + 0.001, upper + lower - 0.001);
+  if (clampReach) local.copy(direction).multiplyScalar(d);
   const along = (d * d + upper * upper - lower * lower) / (2 * d);
   const bend = new THREE.Vector3(0, 0, 1).cross(direction).normalize();
   if (bend.lengthSq() < 0.1) bend.set(1, 0, 0);
+  bend.multiplyScalar(hand);
   const elbow = direction.clone().multiplyScalar(along).addScaledVector(bend, Math.sqrt(Math.max(0, upper * upper - along * along)));
   shoulder.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), elbow.clone().normalize());
   const lowerDirection = local.clone().sub(elbow).applyQuaternion(shoulder.quaternion.clone().invert()).normalize();
