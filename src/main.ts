@@ -81,7 +81,7 @@ async function boot() {
   const requestedStyle = new URLSearchParams(location.search).get('player');
   const playerStyle = requestedStyle === 'classic' || requestedStyle === 'sd' ? requestedStyle : 'ranger';
   const player = createAthlete('player', 5, 0, playerStyle);
-  const opponent = createAthlete('cpu', -5, Math.PI);
+  const opponent = createAthlete('cpu', -5, Math.PI, 'barbarian');
   scene.add(player.group, opponent.group);
   const cpu = new CpuPlayer();
   // Simple scenery frames the court without external assets.

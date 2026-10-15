@@ -7,8 +7,8 @@ import { swingPose } from './swing.ts';
 export const RANGER_DISPLAY_SCALE = .65;
 const point = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3());
 /** KayKit's own 23-bone rig: no renaming, Quaternius tracks, or bind-axis assumptions. */
-export function createRanger(team: AthleteTeam, z: number, facing: number, paddle: THREE.Group): Athlete {
-  const { scene: model } = cloneAthleteModel('ranger');
+export function createRanger(team: AthleteTeam, z: number, facing: number, paddle: THREE.Group, style: 'ranger' | 'barbarian' = 'ranger'): Athlete {
+  const { scene: model } = cloneAthleteModel(style);
   const group = new THREE.Group(); group.name = `${team}-athlete`;
   group.position.set(0,.045,z); group.rotation.y=facing; group.add(model);
   // KayKit faces +Z; the game player's forward is -Z. Normalize height and soles.
@@ -33,7 +33,7 @@ export function createRanger(team: AthleteTeam, z: number, facing: number, paddl
   paddle.scale.setScalar(RANGER_DISPLAY_SCALE/wrists[1].getWorldScale(new THREE.Vector3()).x);
   const bind:Athlete['bind']=new Map();
   model.traverse(o=>{if(o instanceof THREE.Bone)bind.set(o,{position:o.position.clone(),quaternion:o.quaternion.clone()});});
-  const actor:Athlete={style:'ranger',team,group,model,paddle,paddleReach:.41,
+  const actor:Athlete={style,team,group,model,paddle,paddleReach:.41,
     body:bone('hips'),chest:bone('chest'),head:bone('head'),
     arms:[bone('upperarml'),bone('upperarmr')],elbows:[bone('lowerarml'),bone('lowerarmr')],wrists,
     legs:[bone('upperlegl'),bone('upperlegr')],knees:[bone('lowerlegl'),bone('lowerlegr')],feet:[bone('footl'),bone('footr')],

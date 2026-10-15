@@ -2,15 +2,17 @@
 Preserves the source head mesh/UV/material, armature, bind pose, and retained hand/shoe weights.
 New garment surfaces receive normalized weights from the corresponding original skinned surface.
 """
-import bpy, bmesh, math
+import bpy, bmesh, math, sys
 from pathlib import Path
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 ROOT=Path(__file__).resolve().parents[1]
+CHARACTER='Barbarian' if '--barbarian' in sys.argv else 'Ranger'
+RED=CHARACTER=='Barbarian'
 bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False)
-bpy.ops.import_scene.gltf(filepath=str(ROOT/'Ranger.glb'))
+bpy.ops.import_scene.gltf(filepath=str(ROOT/(CHARACTER+'.glb')))
 arm=next(o for o in bpy.context.scene.objects if o.type=='ARMATURE')
-originals={o.name:o for o in bpy.context.scene.objects if o.type=='MESH' and o.name.startswith('Ranger_')}
+originals={o.name.replace(CHARACTER+'_','Ranger_'):o for o in bpy.context.scene.objects if o.type=='MESH' and o.name.startswith(CHARACTER+'_')}
 head=originals['Ranger_Head']
 
 def material(name,color):
@@ -19,8 +21,8 @@ def material(name,color):
  rgb=[v/12.92 if v<=.04045 else ((v+.055)/1.055)**2.4 for v in rgb]
  m.diffuse_color=(*rgb,1);bs=m.node_tree.nodes.get('Principled BSDF');bs.inputs['Base Color'].default_value=(*rgb,1);bs.inputs['Roughness'].default_value=.82
  return m
-BLUE=material('Sports_Shirt_Blue','217cd0');NAVY=material('Sports_Shorts_Navy','193954')
-WHITE=material('Sports_Trim_White','eef4ef');SIDE=material('Sports_Panel_Blue','125294')
+BLUE=material('Sports_Shirt_Red' if RED else 'Sports_Shirt_Blue','d83b43' if RED else '217cd0');NAVY=material('Sports_Shorts_Navy','512838' if RED else '193954')
+WHITE=material('Sports_Trim_White','eef4ef');SIDE=material('Sports_Panel_Red' if RED else 'Sports_Panel_Blue','9f2334' if RED else '125294')
 SKIN=material('Sports_Skin','e0b48d');SOLE=material('Sports_Sole','d7e2e8')
 MATS=[BLUE,NAVY,WHITE,SIDE,SKIN,SOLE]
 
@@ -65,8 +67,8 @@ def tube(name,rings,axis,source,colors=None,segments=16,center=(0,0,0)):
  return mesh(name,verts,faces,mats,source)
 
 # Remove entire isolated adventure objects, not just their colors.
-for name in ['Ranger_Cape','Ranger_Quiver']:
- bpy.data.objects.remove(originals[name],do_unlink=True)
+for name in ['Ranger_Cape','Ranger_Quiver','Ranger_BearHat']:
+ if name in originals:bpy.data.objects.remove(originals[name],do_unlink=True)
 # Body contains scarf, harness, belt, pouches and tunic in a single object.
 # Replace that garment shell with a proper jersey + separate shorts; keep head and rig.
 body=originals['Ranger_Body']
@@ -130,7 +132,7 @@ bpy.data.objects.remove(body,do_unlink=True)
 # Exclude the importer's bone display Icosphere and select only the rig + real meshes.
 bpy.ops.object.select_all(action='DESELECT');arm.select_set(True)
 for o in bpy.context.scene.objects:
- if o.type=='MESH' and (o.name.startswith('Sports_') or o.name.startswith('Ranger_')):o.select_set(True)
+ if o.type=='MESH' and (o.name.startswith('Sports_') or o.name.startswith(CHARACTER+'_')):o.select_set(True)
 bpy.context.view_layer.objects.active=arm
-bpy.ops.export_scene.gltf(filepath=str(ROOT/'public/models/Ranger-sports.glb'),export_format='GLB',use_selection=True,export_animations=False,export_skins=True,export_def_bones=False,export_yup=True)
+bpy.ops.export_scene.gltf(filepath=str(ROOT/('public/models/'+CHARACTER+'-sports.glb')),export_format='GLB',use_selection=True,export_animations=False,export_skins=True,export_def_bones=False,export_yup=True)
 print('SPORTS_EXPORT',len(arm.data.bones),'bones; original head retained',len(head.data.vertices),'vertices')

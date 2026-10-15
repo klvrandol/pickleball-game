@@ -72,3 +72,15 @@ material, armature and bind pose are retained. New clothes transfer normalized t
 weights from the corresponding original body/arm/leg surfaces.
 No Quaternius asset, gameplay envelope or camera configuration is changed.
 This derivative uses the original KayKit CC0 asset; new garment geometry is generated locally.
+
+
+### Barbarian CPU derivative
+
+Uploaded source `Barbarian.glb` (commit `a90bdd1`) is preserved, with a byte-identical
+copy at `public/models/Barbarian.glb`. Runtime: `public/models/Barbarian-sports.glb`.
+It uses the same KayKit Adventurers provenance/license as Ranger. Actual skeleton:
+23 joints, identical source inverse bind matrices to Ranger, no embedded animation clips.
+The sports builder's `-- --barbarian` option removes the separate bear hat, replaces
+adventure clothing with red sports garments, retains the original face/head mesh and
+rig, and transfers new clothing weights from the original surfaces. The original
+Ranger runtime GLB and its appearance are unchanged.

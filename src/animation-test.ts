@@ -19,7 +19,7 @@ async function start() {
   const grid=new THREE.GridHelper(8,32,0x749584,0x9bb7a3);grid.position.y=.038;scene.add(grid);
   const camera=new THREE.PerspectiveCamera(38,1,.1,50);camera.position.set(2,1.9,-3.5);
   const controls=new OrbitControls(camera,canvas);controls.target.set(0,.95,0);controls.enableDamping=true;controls.minDistance=1.5;controls.maxDistance=8;controls.maxPolarAngle=Math.PI*.49;controls.update();
-  const actors={player:createAthlete('player',0,0),ranger:createAthlete('player',0,0,'ranger'),classic:createAthlete('player',0,0,'classic'),cpu:createAthlete('cpu',0,0)};
+  const actors={player:createAthlete('player',0,0),ranger:createAthlete('player',0,0,'ranger'),classic:createAthlete('player',0,0,'classic'),cpu:createAthlete('cpu',0,0,'barbarian')};
   scene.add(actors.player.group,actors.classic.group,actors.ranger.group,actors.cpu.group);
   const ball=new THREE.Mesh(new THREE.SphereGeometry(.045,16,12),new THREE.MeshStandardMaterial({color:0xffe629,emissive:0x4c3900}));scene.add(ball);
   const motion=new SwingMotion(); let progress=0,playing=true,profile=SWING_PROFILES[0];
