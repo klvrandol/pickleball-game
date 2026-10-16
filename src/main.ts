@@ -1,3 +1,5 @@
+import {PlayerHitAssist,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
+import {PlayerTimingVisual} from './player-timing-visual.ts';
 import { createParkEnvironment } from './park-environment';
 import { ImpactEffects } from './impact-effects';
 import { createBallLocator } from './ball-locator.ts';
@@ -5,7 +7,7 @@ import * as THREE from 'three';
 import { loadAthleteModel } from './athlete-model';
 import { createAthlete, animateAthlete } from './athlete';
 import './style.css';
-import { canContact, volleyVelocity, volleyStyle, SWING_CONTACT_DELAY } from './volley';
+import { volleyVelocity, volleyStyle, SWING_CONTACT_DELAY } from './volley';
 import { SwingMotion } from './swing';
 import { CpuPlayer } from './cpu';
 import { GameAudio } from './audio';
@@ -125,6 +127,7 @@ async function boot() {
   landingMarker.rotation.x = -Math.PI / 2; scene.add(landingMarker);
   const reachRing = new THREE.Mesh(new THREE.RingGeometry(1.21, 1.24, 48), new THREE.MeshBasicMaterial({ color: 0xb6d8dc, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false }));
   reachRing.rotation.x = -Math.PI / 2; scene.add(reachRing);
+  const timingVisual=new PlayerTimingVisual(reachRing);scene.add(timingVisual.paddleCue);
   const aim = new THREE.Vector3(0, 0.05, -4.8);
   const marker = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.25, 32), new THREE.MeshBasicMaterial({ color: 0xffed91, side: THREE.DoubleSide }));
   marker.rotation.x = -Math.PI / 2; scene.add(marker);
@@ -199,7 +202,7 @@ async function boot() {
   const playerVelocity = new THREE.Vector3();
   function setPaused(value: boolean) {
     if (['idle', 'over'].includes(match.phase)) return;
-    paused = value; keys.clear(); playerVelocity.set(0, 0, 0);
+    paused = value; hitAssist.resetClock(); keys.clear(); playerVelocity.set(0, 0, 0);
     pauseOverlay.hidden = !paused; audio.setPaused(paused);
     pauseButton.setAttribute('aria-pressed', String(paused));
     if (!paused) { clock.getDelta(); audio.unlock(); (document.activeElement as HTMLElement)?.blur(); }
@@ -222,7 +225,7 @@ async function boot() {
   serviceBox.rotation.x = -Math.PI / 2; scene.add(serviceBox);
   let swingTimer = 0, hitCooldown = 0, cpuServeDelay = 0;
   const playerMotion = new SwingMotion();
-  let pendingHit: { shot: Shot; remaining: number } | null = null;
+  const hitAssist = new PlayerHitAssist(()=>performance.now()/1000);
   let contactPoseTime = 0;
   const playerContact = new THREE.Vector3(), cpuContact = new THREE.Vector3();
   let cpuContactTime = 0;
@@ -233,7 +236,7 @@ async function boot() {
 
   function preparePoint() {
     playerMotion.clear();
-    pendingHit = null; contactPoseTime = 0; cpuContactTime = 0;
+    hitAssist.clear(); contactPoseTime = 0; cpuContactTime = 0;
     match.prepare(); ball.active = false; keys.clear(); cpu.reset(); playerVelocity.set(0, 0, 0);
     resetTrail(); impactEffects.clear(); bouncePulse = 0; toastTime = 0;
     const from = match.servePosition, to = match.serveTarget;
@@ -257,14 +260,28 @@ async function boot() {
     if (paused || resultNotice.active) return;
     if (match.server === 'player') audio.unlock();
     if (!match.drop()) return;
+    hitAssist.clear();
     const actor = match.server === 'player' ? player.group.position : cpu.position;
     match.constrainServeMovement(match.server,actor);
     launchBall(new THREE.Vector3(actor.x + endSign(match.server) * 0.32, 1.0, actor.z - endSign(match.server) * 0.25), new THREE.Vector3());
     (document.activeElement as HTMLElement)?.blur();
   }
-  function inReach() {
-    const allowed = match.phase === 'rally' && match.receiver === 'player' || match.phase === 'drop' && match.server === 'player' && ball.bounces === 1;
-    return allowed && ball.active && ball.position.z > 0 && canContact(player.group.position, ball.position);
+  function playerHitContext():PlayerHitContext {
+    return {ball,feet:player.group.position,velocity:playerVelocity,speed:gameSpeed,
+      role:match.phase==='rally'&&match.receiver==='player'?'return':match.phase==='drop'&&match.server==='player'?'serve':'none',
+      mustBounce:match.bounceRequired.player,volleyAllowed:match.phase==='rally'&&match.hits>=3&&!match.bounceRequired.player};
+  }
+  function inReach() {return canAttemptPlayerHit(playerHitContext());}
+  function assistEvents(events:PlayerHitEvent[]) {
+    for(const event of events){
+      if(event.kind==='start'){
+        playerMotion.begin(player.group.position,event.point,0,event.shot,event.volley,event.delay);
+        swingSide=event.point.x>=player.group.position.x?1:-1;
+      }else if(event.kind==='impact'){
+        if(match.phase==='drop'){if(inReach())launchServe();}
+        else contactHit(event.shot);
+      }else{audio.play('miss');feedback('헛스윙 · 공이 타격 범위를 벗어났어요',false);}
+    }
   }
   function launchServe() {
     const actor = match.server === 'player' ? player.group.position : cpu.position;
@@ -285,11 +302,11 @@ async function boot() {
     if (match.phase === 'ready' && match.server === 'player') { dropServe(); return; }
     if (hitCooldown > 0 || !['rally', 'drop'].includes(match.phase)) return;
     hitCooldown = 0.3; swingTimer = 0.32; playerShot = shot;
-    playerMotion.begin(player.group.position, ball.position, 0, shot, match.phase === 'rally' && match.hits >= 3 && ball.bounces === 0);
-    swingSide = ball.position.x >= player.group.position.x ? 1 : -1;
-    if (!inReach()) { match.message = '헛스윙! 가까운 공의 높이와 타이밍을 맞춰보세요.'; audio.play('miss'); feedback('헛스윙 · 공 가까이에서 클릭!', false); return; }
-    if (match.phase === 'drop') { launchServe(); return; }
-    pendingHit = { shot, remaining: SWING_CONTACT_DELAY };
+    if(!hitAssist.queue(shot,playerHitContext())){
+      playerMotion.begin(player.group.position,ball.position,0,shot,match.phase==='rally'&&match.hits>=3&&ball.bounces===0);
+      match.message='헛스윙! 너무 멀거나 이미 지나간 공입니다.';audio.play('miss');feedback('헛스윙 · 노랑은 준비, 초록은 타격!',false);return;
+    }
+    assistEvents(hitAssist.advance(0,playerHitContext()));
   }
   function contactHit(shot: Shot) {
     if (!inReach() || match.phase !== 'rally') { audio.play('miss'); feedback('헛스윙 · 공이 타격 범위를 벗어났어요', false); return; }
@@ -404,11 +421,9 @@ async function boot() {
       }
       playerMotion.advance(step);
       contactPoseTime = Math.max(0, contactPoseTime - step); cpuContactTime = Math.max(0, cpuContactTime - step);
-      if (pendingHit) {
-        pendingHit.remaining -= step;
-        if (match.phase !== 'rally') pendingHit = null;
-        else if (pendingHit.remaining <= 0) { const shot = pendingHit.shot; pendingHit = null; contactHit(shot); }
-      }
+      assistEvents(hitAssist.advance(step,playerHitContext()));
+      if(hitAssist.pending?.started&&hitAssist.pending.remaining<=0)
+        playerMotion.age=Math.min(playerMotion.age,playerMotion.contactAt*.96);
       if (match.phase === 'rally') {
         const previousZ = cpu.position.z;
         const reply = cpu.update(step, ball, player.group.position, match.receiver === 'cpu', match.hits >= 3 && !match.bounceRequired.cpu);
@@ -447,14 +462,15 @@ async function boot() {
     ballMesh.scale.setScalar(THREE.MathUtils.clamp(pixelsRadius / ballDisplayRadius, 1, 2));
     // Lift only the enlarged drawing so its outline is not cut off by the floor.
     ballMesh.position.y += ballDisplayRadius * ballMesh.scale.x * 1.22 - BALL_RADIUS;
+    const timingContext=playerHitContext(),timing=playerTiming(timingContext);
     const reach = inReach();
     const mustBounce = match.phase === 'rally' && match.receiver === 'player' && match.bounceRequired.player;
     const kitchenVolley = reach && match.phase === 'rally' && ball.bounces === 0 && inKitchen(player.group.position);
     const quality = contactQuality(Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z), ball.position.y);
     text(readiness, match.phase === 'ready' ? (match.server === 'player' ? 'Space 또는 클릭으로 서브 공 떨어뜨리기' : 'CPU 서브를 준비합니다') :
       mustBounce ? '투바운스 룰 · 바운드를 기다리세요' : kitchenVolley ? '키친 안 · 바운드한 공만 타격 가능' :
-      reach ? '● 지금 클릭하면 타격 가능' : match.phase === 'rally' ? '○ 공을 따라 이동하세요' : match.phase === 'drop' ? '드롭 서브 · 바운드 후 클릭' : '11점 · 2점 차 승리 · 서버만 득점');
-    readiness.classList.toggle('ready', reach && !mustBounce && !kitchenVolley);
+      timing==='now' ? '● 초록 · 지금 클릭!' : timing==='soon' ? '● 노랑 · 곧 타격! 미리 클릭 가능' : match.phase === 'rally' ? '○ 공을 따라 이동하세요' : match.phase === 'drop' ? '드롭 서브 · 바운드 후 클릭' : '11점 · 2점 차 승리 · 서버만 득점');
+    readiness.classList.toggle('ready', timing==='now');
     const serving = match.server === 'player' && ['ready', 'drop'].includes(match.phase);
     const aimError = serving ? match.serveLandingError(aim) : !inCourt(aim) ? '목표가 라인 밖입니다. 아웃에 주의하세요.' : undefined;
     marker.material.color.setHex(aimError ? 0xff8168 : 0xffed91);
@@ -469,9 +485,6 @@ async function boot() {
       landingMarker.scale.setScalar(reduceMotion ? 1 : 1 + Math.sin(gameTime * 7) * 0.06);
     }
     text(landingHint, showLanding ? '◎ 큰 원: 예상 착지 · 진한 점: 공 아래 · 아웃 예상은 주황색' : 'WASD 이동 · P / Esc 일시정지');
-    reachRing.visible = !paused && (match.phase === 'rally' && match.receiver === 'player' || match.phase === 'drop' && match.server === 'player');
-    reachRing.position.set(player.group.position.x, 0.052, player.group.position.z);
-    reachRing.material.color.setHex(mustBounce || kitchenVolley ? 0xf4a478 : reach ? 0x9affc4 : 0xb6d8dc);
     text(message, match.message); text(rallyLabel, String(match.hits));
     text(playerScore, String(match.score.player)); text(cpuScore, String(match.score.cpu));
     playerCard.classList.toggle('serving', match.server === 'player'); cpuCard.classList.toggle('serving', match.server === 'cpu');
@@ -504,7 +517,7 @@ async function boot() {
       document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
       document.querySelector('#start')!.textContent = '다시 경기하기';
     }
-    animateAthlete(player, { motion: playerMotion, incoming: match.phase === 'rally' && match.receiver === 'player' ? { ball: ball.position, volley: match.hits >= 3 && ball.bounces === 0, shot: playerShot } : undefined, contactBlend: pendingHit ? 1 - pendingHit.remaining / SWING_CONTACT_DELAY : 1, contact: pendingHit ? ball.position : contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, forward: playerVelocity.z, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
+    animateAthlete(player, { motion: playerMotion, incoming: match.phase === 'rally' && match.receiver === 'player' ? { ball: ball.position, volley: match.hits >= 3 && ball.bounces === 0, shot: playerShot } : undefined, contact: contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, forward: playerVelocity.z, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
     animateAthlete(opponent, { motion: cpu.motion, incoming: match.phase === 'rally' && match.receiver === 'cpu' ? { ball: ball.position, volley: match.hits >= 3 && ball.bounces === 0, shot: cpu.position.z > -3.3 ? 'dink' : 'drive' } : undefined, contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: cpu.moving ? cpu.destination.x - cpu.position.x : 0, forward: cpu.moving ? -(cpu.destination.z - cpu.position.z) : 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });
     trailTime += dt;
     if (trailTime >= 0.025) {
@@ -518,6 +531,7 @@ async function boot() {
     desiredCamera.set(player.group.position.x * 0.23 + 1.8, cameraHeight, cameraDistance + player.group.position.z * 0.26);
     camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * realDt)); camera.lookAt(lookAt);
     ballLocator.quaternion.copy(camera.quaternion);
+    timingVisual.update(timing,timingContext,player.paddle,camera,paused||document.hidden,canvas.clientHeight);
     impactEffects.update(realDt,camera,reduceMotion);
     renderer.render(scene, camera);
   });

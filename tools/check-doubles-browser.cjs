@@ -1,11 +1,11 @@
 // Optional development smoke test: running Vite + Playwright/Chromium required.
 const {chromium}=require('playwright');const assert=require('node:assert/strict');
 (async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--enable-unsafe-swiftshader']});const page=await browser.newPage({viewport:{width:1200,height:800}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.route('**/src/doubles.ts*',async route=>{const response=await route.fetch();let code=await response.text();code=code.replace('function startMatch() {','Object.assign(window,{d:{THREE,actors,agents,positions,match,ball,coordinator,notice,contacts,keys,velocity,preparePoint,dropServe,launchServe,hit,contactHit,stepSimulation,setPaused,aim}});function startMatch() {');await route.fulfill({response,body:code});});
+await page.route('**/src/doubles.ts*',async route=>{const response=await route.fetch();let code=await response.text();code=code.replace('function startMatch() {','Object.assign(window,{d:{THREE,actors,agents,positions,match,ball,coordinator,notice,contacts,keys,velocity,preparePoint,dropServe,launchServe,hit,hitAssist,contactHit,stepSimulation,setPaused,aim}});function startMatch() {');await route.fulfill({response,body:code});});
 await page.goto(process.env.PICKLEBALL_TEST_URL||'http://127.0.0.1:5173/doubles.html');await page.locator('#start').click();
 const idle=process.argv.includes('--idle');
 const report=await page.evaluate(async(idle)=>{
- const d=window.d,{teamPrediction}=await import('/src/doubles-ai.ts'),{canContact}=await import('/src/volley.ts');
+ const d=window.d;d.hitAssist.clock=undefined;const {teamPrediction}=await import('/src/doubles-ai.ts'),{canContact}=await import('/src/volley.ts');
  let seed=idle?77:42;for(const a of Object.values(d.agents))a.random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
  const hits={ranger:0,rogue:0,barbarian:0,mage:0},servers={},results=[],faults={},sample=[];let maxRally=0,lastHits=0,gameFrames=0;
  for(let i=0;i<240000;i++){

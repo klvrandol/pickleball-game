@@ -1,3 +1,5 @@
+import {PlayerHitAssist,canPlayerContact,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
+import {PlayerTimingVisual} from './player-timing-visual.ts';
 import * as THREE from 'three';
 import './style.css';
 import {createParkEnvironment} from './park-environment.ts';
@@ -80,7 +82,8 @@ async function boot(){
   const positions=Object.fromEntries(ids.map(id=>[id,id==='ranger'?player.group.position:agents[id].position])) as Record<ActorId,THREE.Vector3>;
   for(const id of ids){const p=match.startPosition(id);positions[id].set(p.x,.045,p.z);if(id!=='ranger')agents[id].reset(positions[id]);}
   const playerMotion=new SwingMotion(),velocity=new THREE.Vector3(),keys=new Set<string>();
-  let pending:{shot:Shot;remaining:number}|null=null,hitCooldown=0,paused=false,gameTime=0,stride=0,serveDelay=1.2;
+  const hitAssist=new PlayerHitAssist(()=>performance.now()/1000);
+  let hitCooldown=0,paused=false,gameTime=0,stride=0,serveDelay=1.2;
   let handled:DoublesResult|null=null,finished=false;
   const contacts:Partial<Record<ActorId,{point:THREE.Vector3;time:number}>>={};
   const notice=new ResultNotice(),audio=new GameAudio(),fx=new ImpactEffects();scene.add(fx.root);
@@ -98,39 +101,51 @@ async function boot(){
   const rim=new THREE.Mesh(new THREE.RingGeometry(.16,.205,32),new THREE.MeshBasicMaterial({color:0xffffe0,transparent:true,opacity:.85,depthWrite:false,side:THREE.DoubleSide}));rim.rotation.x=-Math.PI/2;scene.add(rim);
   function ring(inner:number,outer:number,color:number){const m=new THREE.Mesh(new THREE.RingGeometry(inner,outer,32),new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));m.rotation.x=-Math.PI/2;scene.add(m);return m;}
   const marker=ring(.2,.25,0xffed91),landing=ring(.25,.30,0x8df4ff),reachRing=ring(1.21,1.24,0xb6d8dc);
+  const timingVisual=new PlayerTimingVisual(reachRing);scene.add(timingVisual.paddleCue);
   landing.add(new THREE.Mesh(new THREE.RingGeometry(.30,.35,32),new THREE.MeshBasicMaterial({color:0x132b42,side:THREE.DoubleSide,depthWrite:false})));
   const serviceBox=new THREE.Mesh(new THREE.PlaneGeometry(width/2-.1,halfLength-kitchen-.1),new THREE.MeshBasicMaterial({color:0xffe690,transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide}));serviceBox.rotation.x=-Math.PI/2;scene.add(serviceBox);
   const aim=new THREE.Vector3(0,.05,-4.8),pointer=new THREE.Vector2(),raycaster=new THREE.Raycaster(),plane=new THREE.Plane(new THREE.Vector3(0,1,0),-.05),impact=new THREE.Vector3();let pointerInside=false;
   canvas.addEventListener('pointermove',e=>{const r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);pointerInside=true;});canvas.addEventListener('pointerleave',()=>pointerInside=false);
   function preparePoint(){
-    match.prepare();keys.clear();velocity.set(0,0,0);playerMotion.clear();pending=null;ball.active=false;fx.clear();coordinator.owner=null;
+    match.prepare();keys.clear();velocity.set(0,0,0);playerMotion.clear();hitAssist.clear();ball.active=false;fx.clear();coordinator.owner=null;
     for(const id of ids){const p=match.startPosition(id);positions[id].set(p.x,.045,p.z);if(id!=='ranger')agents[id].reset(positions[id]);delete contacts[id];}
     const target=match.serveTarget;aim.set(match.serverId==='ranger'?target.x:0,.05,match.serverId==='ranger'?target.z:-4.8);pointerInside=false;serveDelay=1.2;hitCooldown=0;
   }
   function startMatch(){paused=false;audio.unlock();audio.setPaused(false);$('pause-overlay').hidden=true;$('match-overlay').hidden=true;notice.clear();handled=null;finished=false;match.start();preparePoint();(document.activeElement as HTMLElement)?.blur();}
-  function setPaused(value:boolean){if(match.phase==='idle'||match.phase==='over')return;paused=value;keys.clear();velocity.set(0,0,0);audio.setPaused(value);$('pause-overlay').hidden=!value;$('pause').setAttribute('aria-pressed',String(value));(document.activeElement as HTMLElement)?.blur();}
-  function dropServe(){if(paused||notice.active||!match.drop())return;const id=match.serverId,p=positions[id],sign=endSign(TEAM[id]);match.constrainActor(id,p,id==='ranger'?velocity:undefined);ball.launch(new THREE.Vector3(p.x+sign*.32,1,p.z-sign*.25),new THREE.Vector3());(document.activeElement as HTMLElement)?.blur();}
+  function setPaused(value:boolean){if(match.phase==='idle'||match.phase==='over')return;paused=value;hitAssist.resetClock();keys.clear();velocity.set(0,0,0);audio.setPaused(value);$('pause-overlay').hidden=!value;$('pause').setAttribute('aria-pressed',String(value));(document.activeElement as HTMLElement)?.blur();}
+  function dropServe(){if(paused||notice.active||!match.drop())return;hitAssist.clear();const id=match.serverId,p=positions[id],sign=endSign(TEAM[id]);match.constrainActor(id,p,id==='ranger'?velocity:undefined);ball.launch(new THREE.Vector3(p.x+sign*.32,1,p.z-sign*.25),new THREE.Vector3());(document.activeElement as HTMLElement)?.blur();}
   function launchServe(){const id=match.serverId,p=positions[id];match.constrainActor(id,p,id==='ranger'?velocity:undefined);if(!match.serveActor(id,p))return;
     const target=id==='ranger'?aim.clone():new THREE.Vector3(match.serveTarget.x,0,match.serveTarget.z);
     const distance=Math.hypot(target.x-ball.position.x,target.z-ball.position.z);ball.launch(ball.position.clone(),launchVelocity(ball.position,target,Math.max(1.2,distance/9.2)));
     const swing=id==='ranger'?playerMotion:agents[id].motion;swing.begin(p,ball.position,TEAM[id]==='player'?0:Math.PI,'drive',false,0);audio.play('serve');
   }
-  function inReach(){return ball.active&&canContact(positions.ranger,ball.position)&&(match.phase==='rally'&&match.receiver==='player'||match.phase==='drop'&&match.serverId==='ranger'&&ball.bounces===1);}
+  function playerHitContext():PlayerHitContext {
+    return {ball,feet:positions.ranger,velocity,speed,
+      role:match.phase==='rally'&&match.receiver==='player'?'return':match.phase==='drop'&&match.serverId==='ranger'?'serve':'none',
+      mustBounce:match.bounceRequired.player,volleyAllowed:match.phase==='rally'&&match.hits>=3&&!match.bounceRequired.player,
+      designated:match.hits!==1||match.designatedReceiver==='ranger'};
+  }
+  function inReach(){return canAttemptPlayerHit(playerHitContext());}
+  function assistEvents(events:PlayerHitEvent[]){for(const event of events){
+    if(event.kind==='start')playerMotion.begin(positions.ranger,event.point,0,event.shot,event.volley,event.delay);
+    else if(event.kind==='impact'){if(match.phase==='drop'){if(inReach())launchServe();}else playerContact(event.shot);}
+    else {match.message='헛스윙 · 공이 타격 범위를 벗어났어요.';audio.play('miss');}
+  }}
   function hit(shot:Shot){if(paused||notice.active)return;audio.unlock();if(match.phase==='ready'&&match.serverId==='ranger'){dropServe();return;}if(hitCooldown>0||!['drop','rally'].includes(match.phase))return;
-    hitCooldown=.3;playerMotion.begin(positions.ranger,ball.position,0,shot,match.phase==='rally'&&match.hits>=3&&ball.bounces===0);
-    if(!inReach()){match.message='헛스윙 · 공 가까이에서 타이밍을 맞춰 클릭하세요.';audio.play('miss');return;}
-    if(match.phase==='drop'){launchServe();return;}pending={shot,remaining:SWING_CONTACT_DELAY};
+    hitCooldown=.3;
+    if(!hitAssist.queue(shot,playerHitContext())){playerMotion.begin(positions.ranger,ball.position,0,shot,match.phase==='rally'&&match.hits>=3&&ball.bounces===0);match.message='헛스윙 · 너무 멀거나 이미 지나간 공입니다.';audio.play('miss');return;}
+    assistEvents(hitAssist.advance(0,playerHitContext()));
   }
   function contactHit(id:ActorId,shot:Shot,target:THREE.Vector3){
-    if(!ball.active||!canContact(positions[id],ball.position))return;
+    if(!ball.active||!(id==='ranger'?canPlayerContact(positions[id],ball.position):canContact(positions[id],ball.position)))return;
     const volley=ball.bounces===0;if(!match.hitActor(id,positions[id],ball.bounces))return;
     const swing=id==='ranger'?playerMotion:agents[id].motion;swing.impact(positions[id],ball.position,TEAM[id]==='player'?0:Math.PI,volley);swing.aimAt(positions[id],target,TEAM[id]==='player'?0:Math.PI);
     const incomingSpeed=ball.velocity.length(),from=ball.position.clone();contacts[id]={point:from.clone(),time:.11};
     const reply=volley?volleyVelocity(from,target,volleyStyle(shot,incomingSpeed,from.y)):shotVelocity(from,target,shot);
     ball.launch(from,reply);fx.emit(volley?'volley':shot,from,reply);audio.play(shot);match.message=`${NAMES[id]} ${volley?'발리':shot==='drive'?'드라이브':'딩크'} · 랠리 ${match.hits}`;
   }
-  function playerContact(){if(!inReach()||match.phase!=='rally')return;const target=aim.clone(),p=positions.ranger;
-    const distance=Math.hypot(ball.position.x-p.x,ball.position.z-p.z),shot=pending?.shot??'drive';
+  function playerContact(shot:Shot){if(!inReach()||match.phase!=='rally')return;const target=aim.clone(),p=positions.ranger;
+    const distance=Math.hypot(ball.position.x-p.x,ball.position.z-p.z);
     const error=Math.max(0,distance-.85)*1.8+Math.max(0,.45-ball.position.y)*2+(shot==='dink'?Math.max(0,p.z-3)*.15:0);
     target.x+=(Math.random()-.5)*error;target.z+=(Math.random()-.5)*error;contactHit('ranger',shot,target);
   }
@@ -166,7 +181,8 @@ async function boot(){
       const event=ball.step(dt);if(event==='net'){match.net();audio.play('net');}if(event==='bounce'||event==='out'||event==='double-bounce'){match.bounce(ball.position,ball.bounces);audio.play('bounce');}
     }
     coordinator.update(dt,match,ball,positions);
-    if(pending){pending.remaining-=dt;if(match.phase!=='rally')pending=null;else if(pending.remaining<=0){playerContact();pending=null;}}
+    assistEvents(hitAssist.advance(dt,playerHitContext()));
+    if(hitAssist.pending?.started&&hitAssist.pending.remaining<=0)playerMotion.age=Math.min(playerMotion.age,playerMotion.contactAt*.96);
     for(const id of ['rogue','barbarian','mage'] as const){
       const reply=agents[id].update(dt,match,ball,coordinator.owner,positions);
       if(match.phase==='rally'&&!agents[id].pending){const mate=match.partner(id);separateTeammates(positions[id],positions[mate],dt);positions[id].x=THREE.MathUtils.clamp(positions[id].x,-3.8,3.8);positions[id].z=endSign(TEAM[id])*THREE.MathUtils.clamp(positions[id].z*endSign(TEAM[id]),.6,7.8);}
@@ -174,7 +190,7 @@ async function boot(){
       match.constrainActor(id,positions[id]);
     }
     for(const id of ids){match.updateActorFeet(id,positions[id],dt,(positions[id].z-previous[id])*endSign(TEAM[id])<-.00001);if(contacts[id])contacts[id]!.time=Math.max(0,contacts[id]!.time-dt);}
-    match.tick(dt);if(['settling','between','over'].includes(match.phase)){ball.active=false;pending=null;}
+    match.tick(dt);if(['settling','between','over'].includes(match.phase)){ball.active=false;hitAssist.clear();}
   }
   renderer.setAnimationLoop(()=>{
     const elapsed=clock.getDelta(),realDt=Math.min(elapsed,.05),dt=simulationDelta(elapsed,speed,paused||document.hidden);notice.advance(elapsed,paused||document.hidden);
@@ -185,20 +201,20 @@ async function boot(){
     $('result-notice').hidden=!notice.active;$('result-notice').style.opacity=String(notice.opacity);$('result-notice').classList.toggle('cpu-result',Boolean(handled&&TEAM[handled.server]==='cpu'));
     if(match.phase==='over'&&!notice.active&&!finished){finished=true;$('match-overlay').hidden=false;$('overlay-title').textContent=match.winner==='player'?'YOU WIN!':'YOU LOSE!';$('overlay-copy').textContent=`최종 점수 ${match.score.player} : ${match.score.cpu} · 아래에서 재경기 또는 단식 모드를 선택하세요.`;start.textContent='혼합복식 다시 하기';}
     for(const id of ids){const a=actors[id],agent=id==='ranger'?null:agents[id];if(agent)a.group.position.copy(agent.position);const c=contacts[id];
-      animateAthlete(a,{motion:id==='ranger'?playerMotion:agent!.motion,contact:agent?.pending||id==='ranger'&&pending?ball.position:c&&c.time>0?c.point:undefined,walking:id==='ranger'?velocity.lengthSq()>.03:agent!.moving,phase:id==='ranger'?stride:agent!.stride,swingLeft:0,shot:id==='ranger'?playerMotion.shot:agent!.motion.shot,lateral:id==='ranger'?velocity.x:agent!.destination.x-agent!.position.x,side:1,ready:match.phase==='rally',dt,time:gameTime,reduceMotion:motion.checked});}
+      animateAthlete(a,{motion:id==='ranger'?playerMotion:agent!.motion,contact:agent?.pending?ball.position:c&&c.time>0?c.point:undefined,walking:id==='ranger'?velocity.lengthSq()>.03:agent!.moving,phase:id==='ranger'?stride:agent!.stride,swingLeft:0,shot:id==='ranger'?playerMotion.shot:agent!.motion.shot,lateral:id==='ranger'?velocity.x:agent!.destination.x-agent!.position.x,side:1,ready:match.phase==='rally',dt,time:gameTime,reduceMotion:motion.checked});}
     marker.position.copy(aim);marker.visible=!['idle','over'].includes(match.phase);marker.material.color.setHex((match.serverId==='ranger'&&['ready','drop'].includes(match.phase)?match.serveLandingError(aim):!inCourt(aim))?0xff8168:0xffed91);
     serviceBox.visible=['ready','drop'].includes(match.phase);serviceBox.position.set(Math.sign(match.serveTarget.x)*width/4,.047,-endSign(match.server)*(halfLength+kitchen)/2);
     const pixelsRadius=12*camera.position.distanceTo(ball.position)*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/Math.max(1,canvas.clientHeight);ballMesh.scale.setScalar(THREE.MathUtils.clamp(pixelsRadius/ballRadius,1,2));ballMesh.position.copy(ball.position);ballMesh.position.y+=ballRadius*ballMesh.scale.x*1.22-BALL_RADIUS;ballMesh.visible=!['idle','over','between'].includes(match.phase);
     shadow.position.set(ball.position.x,.05,ball.position.z);shadow.visible=ballMesh.visible;shadow.scale.setScalar(1+ball.position.y*.1);rim.position.copy(shadow.position);rim.scale.copy(shadow.scale);rim.visible=shadow.visible;
     landing.visible=match.phase==='rally'&&match.receiver==='player'&&ball.active&&ball.bounces===0;if(landing.visible){const p=landingPoint(ball.position,ball.velocity);landing.position.set(p.x,p.y,p.z);landing.material.color.setHex(inCourt(p)?0x8df4ff:0xff8c73);}
-    reachRing.position.set(positions.ranger.x,.052,positions.ranger.z);reachRing.visible=!paused&&(match.phase==='rally'&&match.receiver==='player'||match.phase==='drop'&&match.serverId==='ranger');reachRing.material.color.setHex(inReach()?0x9affc4:0xb6d8dc);
+    const timingContext=playerHitContext(),timing=playerTiming(timingContext);
     $('player-score').textContent=String(match.score.player);$('cpu-score').textContent=String(match.score.cpu);$('rally').textContent=String(match.hits);$('message').textContent=match.message;
     $('server-label').textContent=`${match.scoreCall} · ${NAMES[match.serverId]} 서브`; $('cpu-status').textContent=`Barbarian ${agents.barbarian.status} / Mage ${agents.mage.status}`;
-    $('readiness').textContent=match.phase==='ready'?match.serverId==='ranger'?'Space → 바운드 후 클릭':'AI 서버 준비':inReach()?'● 클릭으로 타격 가능':`○ ${coordinator.owner?NAMES[coordinator.owner]+' 공 처리':'서브 준비'}`;
+    $('readiness').textContent=match.phase==='ready'?match.serverId==='ranger'?'Space → 바운드 후 클릭':'AI 서버 준비':timing==='now'?'● 초록 · 지금 클릭!':timing==='soon'?'● 노랑 · 곧 타격! 미리 클릭 가능':timing==='blocked'?'바운드/키친/지정 리시버를 확인하세요':`○ ${coordinator.owner?NAMES[coordinator.owner]+' 공 처리':'서브 준비'}`;
     $('contact-hint').textContent=match.phase==='rally'&&match.hits===1?`지정 리시버: ${NAMES[match.designatedReceiver]} · 반드시 바운드 후 리턴`:`우리 팀: Ranger + Rogue · 상대: Barbarian + Mage`;
     $('landing-hint').textContent=`Rogue ${agents.rogue.status} · WASD / 마우스 / P 일시정지`;
     $<HTMLButtonElement>('serve').disabled=paused||match.serverId!=='ranger'||!['ready','drop'].includes(match.phase);$<HTMLButtonElement>('pause').disabled=['idle','over'].includes(match.phase);
     $('player-card').classList.toggle('serving',match.server==='player');$('cpu-card').classList.toggle('serving',match.server==='cpu');
-    desiredCamera.set(positions.ranger.x*.23+1.8,11.4,15.9+positions.ranger.z*.26);camera.position.lerp(desiredCamera,1-Math.exp(-3*realDt));camera.lookAt(lookAt);locator.quaternion.copy(camera.quaternion);fx.update(paused?0:realDt,camera,motion.checked);renderer.render(scene,camera);
+    desiredCamera.set(positions.ranger.x*.23+1.8,11.4,15.9+positions.ranger.z*.26);camera.position.lerp(desiredCamera,1-Math.exp(-3*realDt));camera.lookAt(lookAt);locator.quaternion.copy(camera.quaternion);timingVisual.update(timing,timingContext,player.paddle,camera,paused||document.hidden,canvas.clientHeight);fx.update(paused?0:realDt,camera,motion.checked);renderer.render(scene,camera);
   });
 }

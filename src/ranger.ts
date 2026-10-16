@@ -81,8 +81,10 @@ function contactReach(actor:Athlete,target:THREE.Vector3) {
   const distance=target.distanceTo(point(chain[0]));
   const armLength=point(chain[0]).distanceTo(point(chain[1]))+point(chain[1]).distanceTo(point(chain[2]));
   // Presentation-only stretchy IK for occasional high/far contacts. This preserves
-  // the original game envelope without enlarging the head/body or moving the feet.
-  const stretch=THREE.MathUtils.clamp(1+(distance-reachLength*.88)/armLength,1,3.6);
+  // the gameplay root without enlarging the head/body or moving the feet.
+  // Only the human Ranger may reach the added assist margin; AI skin behavior is unchanged.
+  const maxStretch=actor.style==='ranger'&&actor.team==='player'?6.5:3.6;
+  const stretch=THREE.MathUtils.clamp(1+(distance-reachLength*.88)/armLength,1,maxStretch);
   chain[1].position.multiplyScalar(stretch);chain[2].position.multiplyScalar(stretch);
   reach(actor,target,true);
 }
