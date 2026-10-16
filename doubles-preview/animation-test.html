@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>피클볼 스윙 애니메이션 테스트</title>  <script type="module" crossorigin src="./assets/animation-BKjuE61C.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/three-d9i6TOTs.js">
+  <link rel="modulepreload" crossorigin href="./assets/athlete-CRVfytc2.js">
+  <link rel="stylesheet" crossorigin href="./assets/animation-Bn3nbBvJ.css">
+</head>
+<body><main><aside><a href="./">← 게임으로 돌아가기</a><h1>스윙 테스트</h1><p>현재 선수 모델의 전신 키프레임과 접촉 보정을 확인합니다.</p>
+<label>동작<select id="swing"></select></label><label>선수<select id="team"><option value="player">플레이어 · 파란색</option><option value="cpu">CPU · 빨간색</option></select></label>
+<label>플레이어 스타일<select id="player-style"><option value="ranger">KayKit Ranger · 스포츠 의상</option><option value="sd">3등신 SD · 시험 적용</option><option value="classic">기존 인체 비율</option></select></label><div class="buttons"><button id="play" type="button">일시정지</button><button id="replay" type="button">처음부터</button><button id="impact" type="button">임팩트 보기</button></div>
+<label class="check"><input id="loop" type="checkbox" checked/> 반복 재생</label>
+<label>재생 속도<select id="speed"><option value="0.25">0.25배</option><option value="0.5" selected>0.5배</option><option value="1">1배</option></select></label>
+<label>동작 위치 <output id="progress-label">0%</output><input id="progress" type="range" min="0" max="1000" value="0"/></label>
+<label>공 높이 <output id="height-label">1.15m</output><input id="height" type="range" min="0.55" max="1.65" step="0.05" value="1.15"/></label>
+<label>타격 방향 <output id="aim-label">중앙</output><input id="aim" type="range" min="-2" max="2" step="0.25" value="0"/></label>
+<p id="phase" role="status">불러오는 중…</p><p class="note">드래그: 시점 회전 · 휠: 확대/축소<br/>노란 공: 실제 접촉 목표<br/>50% 지점: 임팩트</p><p class="note">동작 확인을 위해 준비 시간을 늘려 재생합니다. 경기의 타격 타이밍·공 물리·AI·점수는 변경하지 않습니다.</p><div id="error" role="alert" hidden></div></aside><canvas id="preview" aria-label="리깅 선수 스윙 애니메이션 미리보기"></canvas></main></body></html>
