@@ -1,0 +1,12 @@
+const {chromium}=require('playwright');const assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--enable-unsafe-swiftshader']});try{
+ const page=await browser.newPage({viewport:{width:1440,height:900},locale:'ko-KR'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ for(const mode of ['doubles','singles']){
+ await page.goto('http://127.0.0.1:5173/');await page.waitForSelector('#title-root[data-ready=true]',{timeout:60000});assert.equal(await page.locator('h1').innerText(),'PICKLE COURT');await page.screenshot({path:'/tmp/pickle-court-title.png'});
+ await page.locator('#open-settings').click();assert(await page.locator('dialog').isVisible());await page.selectOption('#menu-speed','0.5');await page.locator('#menu-names').uncheck();await page.locator('#menu-motion').check();await page.locator('#close-panel').click();await page.locator('#open-settings').click();assert.equal(await page.locator('#menu-speed').inputValue(),'0.5');await page.locator('#menu-names').check();await page.locator('#close-panel').click();
+ await page.locator('#open-help').click();assert.match(await page.locator('dialog').innerText(),/4구부터/);await page.keyboard.press('Escape');assert(!await page.locator('dialog').isVisible());
+ await page.locator('#start-'+mode).click();await page.waitForFunction(()=>document.querySelector('#match-overlay')?.hidden&&document.querySelector('#serve')?.disabled===false,{},{timeout:60000});assert.equal(await page.locator('#game-speed').inputValue(),'0.5');assert(await page.locator('#reduce-motion').isChecked());assert.equal(await page.locator('.player-nameplate').count(),mode==='doubles'?4:2);
+ await page.locator('#court').click({position:{x:700,y:650}});await page.keyboard.press('Space');await page.waitForTimeout(400);await page.keyboard.press('KeyP');await page.waitForSelector('#pause-overlay:not([hidden])');await page.locator('#pause-overlay .return-title').click();await page.waitForSelector('#title-root[data-ready=true]',{timeout:60000});console.log('PASS title settings/help ->',mode,'autostart, settings, pause and title return');
+ }
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/pickle-court-title-mobile.png'});assert(await page.locator('#start-doubles').isVisible());assert.deepEqual(errors,[]);
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

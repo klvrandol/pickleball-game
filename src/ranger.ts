@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { cloneAthleteModel } from './athlete-model.ts';
+import { cloneAthleteModel, type KayKitStyle } from './athlete-model.ts';
 import type { Athlete, AthletePose, AthleteTeam } from './athlete.ts';
 import { swingPose } from './swing.ts';
 
@@ -7,7 +7,7 @@ import { swingPose } from './swing.ts';
 export const RANGER_DISPLAY_SCALE = .65;
 const point = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3());
 /** KayKit's own 23-bone rig: no renaming, Quaternius tracks, or bind-axis assumptions. */
-export function createRanger(team: AthleteTeam, z: number, facing: number, paddle: THREE.Group, style: 'ranger' | 'barbarian' = 'ranger'): Athlete {
+export function createRanger(team: AthleteTeam, z: number, facing: number, paddle: THREE.Group, style: KayKitStyle = 'ranger'): Athlete {
   const { scene: model } = cloneAthleteModel(style);
   const group = new THREE.Group(); group.name = `${team}-athlete`;
   group.position.set(0,.045,z); group.rotation.y=facing; group.add(model);
@@ -81,8 +81,10 @@ function contactReach(actor:Athlete,target:THREE.Vector3) {
   const distance=target.distanceTo(point(chain[0]));
   const armLength=point(chain[0]).distanceTo(point(chain[1]))+point(chain[1]).distanceTo(point(chain[2]));
   // Presentation-only stretchy IK for occasional high/far contacts. This preserves
-  // the original game envelope without enlarging the head/body or moving the feet.
-  const stretch=THREE.MathUtils.clamp(1+(distance-reachLength*.88)/armLength,1,3.6);
+  // the gameplay root without enlarging the head/body or moving the feet.
+  // Only the human Ranger may reach the added assist margin; AI skin behavior is unchanged.
+  const maxStretch=actor.style==='ranger'&&actor.team==='player'?6.5:3.6;
+  const stretch=THREE.MathUtils.clamp(1+(distance-reachLength*.88)/armLength,1,maxStretch);
   chain[1].position.multiplyScalar(stretch);chain[2].position.multiplyScalar(stretch);
   reach(actor,target,true);
 }
@@ -126,7 +128,7 @@ export function animateRanger(actor:Athlete,pose:AthletePose) {
   actor.group.updateWorldMatrix(true,true);
   const worldTarget=pose.contact??actor.group.localToWorld(target);
   if(motion||pose.contact)contactReach(actor,worldTarget);
-  else if(actor.team === 'cpu')cpuReadyPaddle(actor,actor.group.localToWorld(new THREE.Vector3(.50,1.15,-.38).multiplyScalar(RANGER_DISPLAY_SCALE)));
+  else if(actor.team === 'cpu'||actor.style === 'rogue')cpuReadyPaddle(actor,actor.group.localToWorld(new THREE.Vector3(.50,1.15,-.38).multiplyScalar(RANGER_DISPLAY_SCALE)));
   else reach(actor,worldTarget,true);
   actor.group.updateMatrixWorld(true);
   actor.model.traverse(o=>{if(o instanceof THREE.SkinnedMesh)o.skeleton.update();});

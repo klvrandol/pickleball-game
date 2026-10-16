@@ -49,3 +49,16 @@ test('six Ranger strokes meet the actual paddle face at impact and do not move g
   for(const bone of a.bind.keys())assert.ok(bone.matrixWorld.elements.every(Number.isFinite));
  }
 });
+
+// Expanded human reach must still be drawn as a real paddle contact by the KayKit rig.
+test('Ranger human paddle reaches expanded contact samples without moving its gameplay root',async()=>{
+ const {canPlayerContact}=await import('../src/player-hit-assist.ts');
+ const a=createAthlete('player',4,0,'ranger'),root=a.group.position.clone();let samples=0;
+ for(const x of [-1.3,-1,-.35,.35,1.2,1.3])for(const y of [.55,1.2,1.65,1.95])for(const z of [-1.3,-.5,0,.2]){
+  const ball=new Vector3(x,y,root.z+z);if(!canPlayerContact(root,ball))continue;samples++;
+  animateAthlete(a,{contact:ball,walking:false,phase:0,swingLeft:0,shot:'drive',lateral:0,side:1,ready:true,dt:1/60,time:0,reduceMotion:false});
+  const distance=a.paddle.localToWorld(new Vector3(0,-.34,0)).distanceTo(ball);
+  assert.ok(distance<.025,`expanded contact ${[x,y,z]} error ${distance}`);assert.deepEqual(a.group.position,root);
+ }
+ assert.ok(samples>50);
+});

@@ -84,3 +84,28 @@ The sports builder's `-- --barbarian` option removes the separate bear hat, repl
 adventure clothing with red sports garments, retains the original face/head mesh and
 rig, and transfers new clothing weights from the original surfaces. The original
 Ranger runtime GLB and its appearance are unchanged.
+
+### Doubles Rogue / Mage sports derivatives
+
+Uploaded originals `Rogue.glb` and `Mage.glb` arrived in `dac7e35` and remain unmodified.
+Byte-identical copies are in `public/models/`; runtime uses `Rogue-sports.glb` and
+`Mage-sports.glb`. These KayKit Adventurers assets share the provenance/CC0 license
+listed above. Both source rigs have 23 joints and no animation clips. The actual
+bone names and inverse bind transforms are retained; the existing KayKit-specific
+swing/hand contact solver is used, never Quaternius animation tracks.
+
+Rebuild with Blender 4.3+:
+
+```
+blender -b --python tools/build-doubles-sports.py
+blender -b --python tools/build-doubles-sports.py -- --mage
+```
+
+The separate cape and Mage hat are removed; original heads/hair/UVs remain. Adventure
+body garments are replaced by blue/red jerseys, short athletic skirts over separate
+compression shorts, wrist bands, socks and sneakers. Most new surfaces transfer
+normalized top-four source weights. The skirt waist is bound to hips and its lower
+rings gradually blend up to 45% into the corresponding thigh, retaining a continuous
+waist and flexible silhouette during gait. This is skinned clothing, not simulated
+cloth: extreme reaching poses may still cause skirt/shorts intersections. Source
+faces are retained rather than redesigned to suggest a different sex.

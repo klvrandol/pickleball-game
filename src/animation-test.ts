@@ -1,3 +1,4 @@
+import {installI18n,languageControl} from './i18n/dom.ts';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadAthleteModel } from './athlete-model';
@@ -6,6 +7,8 @@ import { SwingMotion } from './swing';
 import { SWING_PROFILES } from './swing-keyframes';
 import './animation-test.css';
 const input = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+document.querySelector('aside')?.append(languageControl());
+installI18n();
 async function start() {
   const select = input<HTMLSelectElement>('swing');
   for (const profile of SWING_PROFILES) select.add(new Option(profile.label, profile.id));
