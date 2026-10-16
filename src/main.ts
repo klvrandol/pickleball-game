@@ -1,3 +1,4 @@
+import {PlayerIdentification} from './player-identification.ts';
 import {PlayerHitAssist,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
 import {PlayerTimingVisual} from './player-timing-visual.ts';
 import { createParkEnvironment } from './park-environment';
@@ -85,6 +86,7 @@ async function boot() {
   const player = createAthlete('player', 5, 0, playerStyle);
   const opponent = createAthlete('cpu', -5, Math.PI, 'barbarian');
   scene.add(player.group, opponent.group);
+  const identification=new PlayerIdentification(canvas,[{athlete:player,role:'you'},{athlete:opponent,role:'cpu'}],document.querySelector<HTMLInputElement>('#show-nameplates')!);
   const cpu = new CpuPlayer();
   const ball = new PracticeBall();
   // Only the drawing is enlarged. PracticeBall still uses the physical BALL_RADIUS.
@@ -533,6 +535,7 @@ async function boot() {
     ballLocator.quaternion.copy(camera.quaternion);
     timingVisual.update(timing,timingContext,player.paddle,camera,paused||document.hidden,canvas.clientHeight);
     impactEffects.update(realDt,camera,reduceMotion);
+    identification.update(camera,canvas,!['idle','over'].includes(match.phase));
     renderer.render(scene, camera);
   });
 }

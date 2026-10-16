@@ -1,3 +1,4 @@
+import {PlayerIdentification} from './player-identification.ts';
 import {PlayerHitAssist,canPlayerContact,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
 import {PlayerTimingVisual} from './player-timing-visual.ts';
 import * as THREE from 'three';
@@ -78,6 +79,7 @@ async function boot(){
   const actors={} as Record<ActorId,Athlete>;
   const agents={} as Record<Exclude<ActorId,'ranger'>,DoublesAgent>;
   for(const id of ids){const team=TEAM[id];actors[id]=createAthlete(team,endSign(team)*5,team==='player'?0:Math.PI,id);scene.add(actors[id].group);if(id!=='ranger')agents[id]=new DoublesAgent(id);}
+  const identification=new PlayerIdentification(canvas,ids.map(id=>({athlete:actors[id],role:id==='ranger'?'you':id==='rogue'?'partner':'cpu'})),document.querySelector<HTMLInputElement>('#show-nameplates')!);
   const player=actors.ranger,match=new DoublesMatch(),ball=new PracticeBall(),coordinator=new TeamCoordinator();
   const positions=Object.fromEntries(ids.map(id=>[id,id==='ranger'?player.group.position:agents[id].position])) as Record<ActorId,THREE.Vector3>;
   for(const id of ids){const p=match.startPosition(id);positions[id].set(p.x,.045,p.z);if(id!=='ranger')agents[id].reset(positions[id]);}
@@ -215,6 +217,6 @@ async function boot(){
     $('landing-hint').textContent=`Rogue ${agents.rogue.status} · WASD / 마우스 / P 일시정지`;
     $<HTMLButtonElement>('serve').disabled=paused||match.serverId!=='ranger'||!['ready','drop'].includes(match.phase);$<HTMLButtonElement>('pause').disabled=['idle','over'].includes(match.phase);
     $('player-card').classList.toggle('serving',match.server==='player');$('cpu-card').classList.toggle('serving',match.server==='cpu');
-    desiredCamera.set(positions.ranger.x*.23+1.8,11.4,15.9+positions.ranger.z*.26);camera.position.lerp(desiredCamera,1-Math.exp(-3*realDt));camera.lookAt(lookAt);locator.quaternion.copy(camera.quaternion);timingVisual.update(timing,timingContext,player.paddle,camera,paused||document.hidden,canvas.clientHeight);fx.update(paused?0:realDt,camera,motion.checked);renderer.render(scene,camera);
+    desiredCamera.set(positions.ranger.x*.23+1.8,11.4,15.9+positions.ranger.z*.26);camera.position.lerp(desiredCamera,1-Math.exp(-3*realDt));camera.lookAt(lookAt);locator.quaternion.copy(camera.quaternion);timingVisual.update(timing,timingContext,player.paddle,camera,paused||document.hidden,canvas.clientHeight);fx.update(paused?0:realDt,camera,motion.checked);identification.update(camera,canvas,!['idle','over'].includes(match.phase));renderer.render(scene,camera);
   });
 }
