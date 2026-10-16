@@ -1,3 +1,4 @@
+import { createParkEnvironment } from './park-environment';
 import { ImpactEffects } from './impact-effects';
 import { createBallLocator } from './ball-locator.ts';
 import * as THREE from 'three';
@@ -51,9 +52,7 @@ async function boot() {
     mesh.castShadow = true;
     return mesh;
   }
-  const ground = box(180, 0.15, 180, 0xdce9cf, 0, -0.19);
-  scene.add(ground);
-  scene.add(box(13, 0.12, 23, 0x81ac93, 0, -0.07));
+  scene.add(createParkEnvironment());
   // Official court: 20 × 44 feet; kitchen extends 7 feet from net.
   const width = 6.096, halfLength = 6.7056, kitchen = 2.1336;
   scene.add(box(width, 0.025, halfLength * 2, 0x377f83, 0, 0.005));
@@ -85,17 +84,6 @@ async function boot() {
   const opponent = createAthlete('cpu', -5, Math.PI, 'barbarian');
   scene.add(player.group, opponent.group);
   const cpu = new CpuPlayer();
-  // Simple scenery frames the court without external assets.
-  for (const x of [-8.5, 8.5]) for (const z of [-9, 0, 9]) {
-    scene.add(box(0.22, 1.8, 0.22, 0x8d8263, x, 0.9, z));
-    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 1), new THREE.MeshStandardMaterial({ color: z === 0 ? 0x7ea878 : 0x91b383, roughness: 1 }));
-    crown.position.set(x, 2.3, z); crown.scale.y = 1.25; crown.castShadow = true; scene.add(crown);
-  }
-  for (const x of [-5.2, 5.2]) {
-    scene.add(box(0.65, 0.12, 2.2, 0xb29a70, x, 0.52, -3.8));
-    for (const z of [-4.5, -3.1]) scene.add(box(0.48, 0.48, 0.1, 0x647568, x, 0.24, z));
-  }
-
   const ball = new PracticeBall();
   // Only the drawing is enlarged. PracticeBall still uses the physical BALL_RADIUS.
   const ballDisplayRadius = BALL_RADIUS * 3.25;
