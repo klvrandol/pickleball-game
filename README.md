@@ -5,7 +5,7 @@ TypeScript + Three.js + Vite로 만드는 가벼운 3D 피클볼 게임입니다
 
 ## GitHub Pages 배포 준비
 
-공개 전 절차와 현재 미확인 라이선스 항목은 [DEPLOYMENT.md](DEPLOYMENT.md)에 정리했습니다. 현재 작업은 준비·로컬 검증만 완료하며, 실제 배포는 최종 승인 후 수동으로 실행합니다.
+기본 주소와 기존 미리보기를 함께 보존하는 배포·복구 절차는 [DEPLOYMENT.md](DEPLOYMENT.md)에 정리했습니다. `npm run publish:pages`는 dist 전체를 gh-pages 루트에 반영하고 doubles-preview 폴더는 그대로 유지합니다.
 
 ## Windows에서 실행하기
 
