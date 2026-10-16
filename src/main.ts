@@ -334,6 +334,7 @@ async function boot() {
     if (event.button === 0 || event.button === 2) { event.preventDefault(); hit(event.button === 0 ? 'drive' : 'dink'); }
   });
   serveButton.addEventListener('click', dropServe);
+  if(new URLSearchParams(location.search).get('play')==='1') startMatch();
   document.querySelector('#start')!.addEventListener('click', startMatch);
   document.querySelector('#restart')!.addEventListener('click', startMatch);
   document.querySelector('#pause-restart')!.addEventListener('click', startMatch);

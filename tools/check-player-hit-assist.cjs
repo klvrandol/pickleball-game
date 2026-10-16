@@ -13,7 +13,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
    code=code.replace(`function ${name}(shot) {`,`function ${name}(shot) {window.__hitTrace.push({timing:playerTiming(playerHitContext()),point:ball.position.toArray(),shot});`);
    await route.fulfill({response,body:code});
   });
-  await page.goto('http://127.0.0.1:5173/'+(mode==='doubles'?'doubles.html':''));await page.locator('#start').click();await page.waitForFunction(()=>window.t);
+  await page.goto('http://127.0.0.1:5173/'+(mode==='doubles'?'doubles.html':'singles.html'));await page.locator('#start').click();await page.waitForFunction(()=>window.t);
   async function fixture({early=false,far=false,late=false,bounced=false,kitchen=false}={}){
    return page.evaluate(o=>{const t=window.t;t.hitAssist.clock=undefined;t.preparePoint();t.match.phase='rally';t.match.hits=3;t.match.lastHitter='cpu';t.match.bounceRequired={player:false,cpu:false};const z=o.kitchen?1.8:4;t.player.group.position.set(0,.045,z);(t.playerVelocity||t.velocity).set(0,0,0);if(t.cpu)t.cpu.position.set(-2,.045,-5);else{t.positions.rogue.set(-2,.045,6);t.positions.barbarian.set(-2,.045,-5);t.positions.mage.set(2,.045,-5);}t.aim.set(0,.05,-4.8);t.ball.launch(new t.THREE.Vector3(o.far?4:o.early?.35:o.late?.3:1.2,1.2,o.late?z+.7:o.early?z-1.8:z-.5),new t.THREE.Vector3(0,o.early?1:0,o.early?9:o.late?4:0));t.ball.bounces=o.bounced?1:0;window.__hitTrace=[];const c=t.playerHitContext();return {timing:t.playerTiming(c),position:t.ball.position.toArray()};}, {early,far,late,bounced,kitchen});
   }

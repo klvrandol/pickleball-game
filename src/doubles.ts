@@ -94,7 +94,7 @@ async function boot(){
   let speed=DEFAULT_GAME_SPEED;try{speed=parseGameSpeed(localStorage.getItem('pickleball.speed'));}catch{}
   const speedSelect=$<HTMLSelectElement>('game-speed');speedSelect.value=String(speed);
   speedSelect.onchange=()=>{speed=parseGameSpeed(speedSelect.value);try{localStorage.setItem('pickleball.speed',String(speed));}catch{}speedSelect.blur();};
-  const motion=$<HTMLInputElement>('reduce-motion');motion.checked=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motion=$<HTMLInputElement>('reduce-motion');motion.checked=window.matchMedia('(prefers-reduced-motion: reduce)').matches;try{const stored=localStorage.getItem('pickleball.reduceMotion');if(stored!==null)motion.checked=stored==='on';}catch{}motion.onchange=()=>{try{localStorage.setItem('pickleball.reduceMotion',motion.checked?'on':'off');}catch{}};
   const sound=$<HTMLButtonElement>('sound'),volume=$<HTMLInputElement>('volume');volume.value=String(audio.volume*100);
   function syncSound(){sound.textContent=audio.enabled?'♪ 소리 켜짐':'♪ 소리 꺼짐';sound.setAttribute('aria-pressed',String(audio.enabled));$('volume-label').textContent=`${Math.round(audio.volume*100)}%`;}
   sound.onclick=()=>{audio.setEnabled(!audio.enabled);syncSound();sound.blur();};volume.oninput=()=>{audio.setVolume(Number(volume.value)/100);syncSound();};syncSound();
@@ -153,6 +153,7 @@ async function boot(){
     const error=Math.max(0,distance-.85)*1.8+Math.max(0,.45-ball.position.y)*2+(shot==='dink'?Math.max(0,p.z-3)*.15:0);
     target.x+=(Math.random()-.5)*error;target.z+=(Math.random()-.5)*error;contactHit('ranger',shot,target);
   }
+  if(new URLSearchParams(location.search).get('play')==='1') startMatch();
   start.onclick=startMatch;$('restart').onclick=startMatch;$('pause-restart').onclick=startMatch;$('resume').onclick=()=>setPaused(false);$('pause').onclick=()=>setPaused(!paused);$('serve').onclick=()=>{audio.unlock();dropServe();};
   canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{if(e.button===0||e.button===2){e.preventDefault();hit(e.button===0?'drive':'dink');}});
   window.addEventListener('keydown',e=>{if((e.target as HTMLElement).matches('input,select,button,a'))return;
