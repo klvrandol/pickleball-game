@@ -258,6 +258,7 @@ async function boot() {
     if (match.server === 'player') audio.unlock();
     if (!match.drop()) return;
     const actor = match.server === 'player' ? player.group.position : cpu.position;
+    match.constrainServeMovement(match.server,actor);
     launchBall(new THREE.Vector3(actor.x + endSign(match.server) * 0.32, 1.0, actor.z - endSign(match.server) * 0.25), new THREE.Vector3());
     (document.activeElement as HTMLElement)?.blur();
   }
@@ -268,6 +269,7 @@ async function boot() {
   function launchServe() {
     const actor = match.server === 'player' ? player.group.position : cpu.position;
     const server = match.server;
+    match.constrainServeMovement(server,actor,server==='player'?playerVelocity:undefined);
     if (!match.serve(server, actor)) return;
     const destination = server === 'player' ? aim.clone() : new THREE.Vector3(match.serveTarget.x, 0, match.serveTarget.z);
     const distance = Math.hypot(destination.x - ball.position.x, destination.z - ball.position.z);
@@ -380,6 +382,9 @@ async function boot() {
     }
     player.group.position.x = THREE.MathUtils.clamp(player.group.position.x, -4.4, 4.4);
     player.group.position.z = THREE.MathUtils.clamp(player.group.position.z, 0.55, 8.2);
+    // Shared post-movement constraint covers WASD, inertia and any position assist.
+    match.constrainServeMovement('player',player.group.position,playerVelocity);
+    match.constrainServeMovement('cpu',cpu.position);
     accumulator += dt;
     while (accumulator >= 1 / 120) {
       const step = 1 / 120;

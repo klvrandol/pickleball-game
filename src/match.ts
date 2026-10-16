@@ -59,6 +59,23 @@ export class SinglesMatch {
   get servePosition(): CourtPosition { return { x: this.serveX, z: endSign(this.server) * 7.3 }; }
   get serveTarget(): CourtPosition { return { x: -this.serveX, z: -endSign(this.server) * 4.8 }; }
 
+  /** Grounded feet must remain wholly behind/between the service boundary extensions. */
+  get serveMovementBounds() {
+    const margin=0.01,innerX=FOOT_X+margin,outerX=HALF_WIDTH+LINE_HALF-FOOT_X-margin;
+    const behind=HALF_LENGTH+LINE_HALF+FOOT_Z+margin,back=this.server==='player'?8.2:7.8;
+    return {minX:this.serveX>0?innerX:-outerX,maxX:this.serveX>0?outerX:-innerX,
+      minZ:this.server==='player'?behind:-back,maxZ:this.server==='player'?back:-behind};
+  }
+  /** Apply after every manual/assisted displacement; never restrict the receiver or rally. */
+  constrainServeMovement(side:Side,position:CourtPosition,velocity?:{x:number;z:number}):boolean {
+    if(side!==this.server||(this.phase!=='ready'&&this.phase!=='drop'))return false;
+    const bounds=this.serveMovementBounds,oldX=position.x,oldZ=position.z;
+    position.x=Math.max(bounds.minX,Math.min(bounds.maxX,position.x));
+    position.z=Math.max(bounds.minZ,Math.min(bounds.maxZ,position.z));
+    if(velocity){if(position.x!==oldX)velocity.x=0;if(position.z!==oldZ)velocity.z=0;}
+    return position.x!==oldX||position.z!==oldZ;
+  }
+
   serveLandingError(p: CourtPosition): string | undefined {
     if (!inCourt(p)) return '아웃! 코트 안쪽을 조준하세요.';
     if (p.z * endSign(this.server) >= 0) return '상대 서비스 코트를 조준하세요.';
