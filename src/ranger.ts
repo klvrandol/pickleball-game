@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { cloneAthleteModel } from './athlete-model.ts';
+import { cloneAthleteModel, type KayKitStyle } from './athlete-model.ts';
 import type { Athlete, AthletePose, AthleteTeam } from './athlete.ts';
 import { swingPose } from './swing.ts';
 
@@ -7,7 +7,7 @@ import { swingPose } from './swing.ts';
 export const RANGER_DISPLAY_SCALE = .65;
 const point = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3());
 /** KayKit's own 23-bone rig: no renaming, Quaternius tracks, or bind-axis assumptions. */
-export function createRanger(team: AthleteTeam, z: number, facing: number, paddle: THREE.Group, style: 'ranger' | 'barbarian' = 'ranger'): Athlete {
+export function createRanger(team: AthleteTeam, z: number, facing: number, paddle: THREE.Group, style: KayKitStyle = 'ranger'): Athlete {
   const { scene: model } = cloneAthleteModel(style);
   const group = new THREE.Group(); group.name = `${team}-athlete`;
   group.position.set(0,.045,z); group.rotation.y=facing; group.add(model);
@@ -126,7 +126,7 @@ export function animateRanger(actor:Athlete,pose:AthletePose) {
   actor.group.updateWorldMatrix(true,true);
   const worldTarget=pose.contact??actor.group.localToWorld(target);
   if(motion||pose.contact)contactReach(actor,worldTarget);
-  else if(actor.team === 'cpu')cpuReadyPaddle(actor,actor.group.localToWorld(new THREE.Vector3(.50,1.15,-.38).multiplyScalar(RANGER_DISPLAY_SCALE)));
+  else if(actor.team === 'cpu'||actor.style === 'rogue')cpuReadyPaddle(actor,actor.group.localToWorld(new THREE.Vector3(.50,1.15,-.38).multiplyScalar(RANGER_DISPLAY_SCALE)));
   else reach(actor,worldTarget,true);
   actor.group.updateMatrixWorld(true);
   actor.model.traverse(o=>{if(o instanceof THREE.SkinnedMesh)o.skeleton.update();});
