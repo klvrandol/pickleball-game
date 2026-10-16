@@ -1,3 +1,4 @@
+import {t,localizeText} from './i18n/index.ts';
 import {DOUBLES_NAMES} from './display-names.ts';
 import { SinglesMatch, endSign, other, inKitchen, type Side, type CourtPosition } from './match.ts';
 export type ActorId = 'ranger' | 'rogue' | 'barbarian' | 'mage';
@@ -83,8 +84,10 @@ export class DoublesMatch extends SinglesMatch {
   }
 }
 export function doublesTitle(r:DoublesResult):string {
-  if(r.winner)return r.winner==='player'?'YOU WIN! · 우리 팀 승리':'YOU LOSE! · 상대 팀 승리';
-  if(r.kind==='point')return r.side==='player'?'POINT! · 우리 팀 득점':'POINT! · 상대 팀 득점';
-  const team=TEAM[r.server]==='player'?'우리 팀':'상대 팀';
-  return `${r.kind==='sideout'?'서브권 전환 · ':''}${team} ${r.serverNumber===1?'첫 번째':'두 번째'} 서버`;
+  if(r.winner)return t(r.winner==='player'?'doubles.win':'doubles.lose');
+  if(r.kind==='point')return t(r.side==='player'?'doubles.ourPoint':'doubles.theirPoint');
+  return t(r.kind==='sideout'?'doubles.sideoutServer':'doubles.server',{
+    team:localizeText(TEAM[r.server]==='player'?'우리 팀':'상대 팀'),
+    number:t(r.serverNumber===1?'server.first':'server.second'),
+  });
 }

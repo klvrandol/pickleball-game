@@ -1,3 +1,5 @@
+import {t,localizeText} from './i18n/index.ts';
+import {installI18n,languageControl} from './i18n/dom.ts';
 import {applyDisplayNames,displayColor,SINGLES_NAMES} from './display-names.ts';
 import {PlayerIdentification} from './player-identification.ts';
 import {PlayerHitAssist,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
@@ -21,17 +23,20 @@ import { PracticeBall, BALL_RADIUS, launchVelocity, shotVelocity, type Shot } fr
 
 const canvas = document.querySelector<HTMLCanvasElement>('#court')!;
 applyDisplayNames(document,'singles');
+document.querySelector('.settings')?.append(languageControl());
+document.querySelector('#pause-overlay > div')?.append(languageControl());
+installI18n();
 boot().catch(error => {
   document.querySelector<HTMLElement>('#error')!.hidden = false;
-  document.querySelector<HTMLElement>('#error')!.textContent = '게임 또는 캐릭터를 불러오지 못했습니다. 새로고침해 주세요.';
+  document.querySelector<HTMLElement>('#error')!.textContent = t("ui.040");
   console.error(error);
 });
 
 async function boot() {
   const startButton = document.querySelector<HTMLButtonElement>('#start')!;
-  startButton.disabled = true; startButton.textContent = '선수 모델 불러오는 중…';
+  startButton.disabled = true; startButton.textContent = t("ui.041");
   await loadAthleteModel();
-  startButton.disabled = false; startButton.textContent = '경기 시작';
+  startButton.disabled = false; startButton.textContent = t("ui.042");
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -188,7 +193,7 @@ async function boot() {
   motionControl.checked = reduceMotion;
   function text(element: HTMLElement, value: string) { if (element.textContent !== value) element.textContent = value; }
   function syncSound() {
-    text(soundButton, audio.available ? audio.enabled ? '♪ 소리 켜짐' : '♪ 소리 꺼짐' : '소리 사용 불가');
+    text(soundButton, audio.available ? audio.enabled ? t("ui.043") : t("ui.044") : t("ui.045"));
     soundButton.setAttribute('aria-pressed', String(audio.enabled && audio.available));
     soundButton.disabled = !audio.available;
     volumeSlider.value = String(Math.round(audio.volume * 100)); text(volumeLabel, `${Math.round(audio.volume * 100)}%`);
@@ -284,7 +289,7 @@ async function boot() {
       }else if(event.kind==='impact'){
         if(match.phase==='drop'){if(inReach())launchServe();}
         else contactHit(event.shot);
-      }else{audio.play('miss');feedback('헛스윙 · 공이 타격 범위를 벗어났어요',false);}
+      }else{audio.play('miss');feedback(t("ui.046"),false);}
     }
   }
   function launchServe() {
@@ -297,7 +302,7 @@ async function boot() {
     launchBall(ball.position.clone(), launchVelocity(ball.position, destination, Math.max(1.2, distance / 9.2)));
     const motion = server === 'player' ? playerMotion : cpu.motion;
     motion.begin(actor, ball.position, server === 'player' ? 0 : Math.PI, 'drive', false, 0);
-    audio.play('serve'); feedback(server === 'player' ? 'SERVE · 대각선으로!' : 'CPU SERVE');
+    audio.play('serve'); feedback(server === 'player' ? t("ui.048") : 'CPU SERVE');
     if (server === 'player') cpu.receive(); else cpu.swing = 0.28;
   }
   function hit(shot: Shot) {
@@ -308,12 +313,12 @@ async function boot() {
     hitCooldown = 0.3; swingTimer = 0.32; playerShot = shot;
     if(!hitAssist.queue(shot,playerHitContext())){
       playerMotion.begin(player.group.position,ball.position,0,shot,match.phase==='rally'&&match.hits>=3&&ball.bounces===0);
-      match.message='헛스윙! 너무 멀거나 이미 지나간 공입니다.';audio.play('miss');feedback('헛스윙 · 노랑은 준비, 초록은 타격!',false);return;
+      match.message=t("ui.049");audio.play('miss');feedback(t("ui.051"),false);return;
     }
     assistEvents(hitAssist.advance(0,playerHitContext()));
   }
   function contactHit(shot: Shot) {
-    if (!inReach() || match.phase !== 'rally') { audio.play('miss'); feedback('헛스윙 · 공이 타격 범위를 벗어났어요', false); return; }
+    if (!inReach() || match.phase !== 'rally') { audio.play('miss'); feedback(t("ui.046"), false); return; }
     const volley = ball.bounces === 0;
     if (!match.hit('player', player.group.position, ball.bounces)) return;
     playerMotion.impact(player.group.position, ball.position, 0, volley);
@@ -328,7 +333,7 @@ async function boot() {
     launchBall(ball.position.clone(), velocity); cpu.receive();
     const quality = contactQuality(distance, ball.position.y);
     audio.play(shot); shotEffect(shot,volley); feedback(`${volley ? (shot === 'drive' ? 'VOLLEY' : 'SOFT VOLLEY') : shot === 'drive' ? 'DRIVE' : 'DINK'} · ${contactText[quality]}`, quality === 'sweet');
-    match.message = volley ? (shot === 'drive' ? '발리! 공중에서 빠르게 받아쳤습니다.' : '부드러운 발리! 짧은 코스를 조준하세요.') : shot === 'drive' ? '드라이브! 빠르고 낮게 보냅니다.' : '딩크! 상대 키친에 짧게 보내보세요.';
+    match.message = volley ? (shot === 'drive' ? t("ui.052") : t("ui.053")) : shot === 'drive' ? t("ui.054") : t("ui.055");
   }
   canvas.addEventListener('pointerdown', event => {
     if (event.button === 0 || event.button === 2) { event.preventDefault(); hit(event.button === 0 ? 'drive' : 'dink'); }
@@ -416,7 +421,7 @@ async function boot() {
         if (match.server === 'cpu' && ball.bounces === 1 && ball.position.y >= 0.24 && ball.active) launchServe();
         else if (!ball.active && event) {
           match.phase = 'ready'; cpuServeDelay = 0.5;
-          match.message = '서브 공을 놓쳤습니다. Space 또는 서브 준비로 다시 떨어뜨리세요.';
+          match.message = t("ui.056");
         }
       } else if (match.phase === 'rally') {
         const event = ball.step(step);
@@ -434,12 +439,12 @@ async function boot() {
         const reply = cpu.update(step, ball, player.group.position, match.receiver === 'cpu', match.hits >= 3 && !match.bounceRequired.cpu);
         match.updateFeet('cpu', cpu.position, step, cpu.position.z > previousZ + 0.00001);
         if (reply && match.phase === 'rally') {
-          if (reply.missed) { match.message = 'CPU가 헛스윙했습니다!'; audio.play('miss'); }
+          if (reply.missed) { match.message = t("ui.057"); audio.play('miss'); }
           else if (match.hit('cpu', cpu.position, ball.bounces)) {
             cpuContact.copy(ball.position); cpuContactTime = 0.11;
             launchBall(ball.position.clone(), reply.volley ? volleyVelocity(ball.position, reply.target, reply.volley) : shotVelocity(ball.position, reply.target, reply.shot));
             audio.play(reply.shot); shotEffect(reply.shot,Boolean(reply.volley));
-            match.message = `CPU ${reply.volley ? '발리' : reply.shot === 'drive' ? '드라이브' : '딩크'}! 직접 받아치세요.`;
+            match.message = t("ui.058",{v0:localizeText(String(reply.volley ? '발리' : reply.shot === 'drive' ? '드라이브' : '딩크'))});
           }
         }
       } else {
@@ -453,7 +458,7 @@ async function boot() {
       accumulator -= step;
     }
     opponent.group.position.copy(cpu.position);
-    text(cpuLabel, match.server === 'cpu' && ['ready', 'drop'].includes(match.phase) ? '서브 준비' : cpu.status);
+    text(cpuLabel, match.server === 'cpu' && ['ready', 'drop'].includes(match.phase) ? t("ui.062") : cpu.status);
     if (match.phase === 'ready') {
       const actor = match.server === 'player' ? player.group.position : cpu.position;
       ball.position.set(actor.x + endSign(match.server) * 0.32, 1, actor.z - endSign(match.server) * 0.25);
@@ -472,14 +477,14 @@ async function boot() {
     const mustBounce = match.phase === 'rally' && match.receiver === 'player' && match.bounceRequired.player;
     const kitchenVolley = reach && match.phase === 'rally' && ball.bounces === 0 && inKitchen(player.group.position);
     const quality = contactQuality(Math.hypot(ball.position.x - player.group.position.x, ball.position.z - player.group.position.z), ball.position.y);
-    text(readiness, match.phase === 'ready' ? (match.server === 'player' ? 'Space 또는 클릭으로 서브 공 떨어뜨리기' : 'CPU 서브를 준비합니다') :
-      mustBounce ? '투바운스 룰 · 바운드를 기다리세요' : kitchenVolley ? '키친 안 · 바운드한 공만 타격 가능' :
-      timing==='now' ? '● 초록 · 지금 클릭!' : timing==='soon' ? '● 노랑 · 곧 타격! 미리 클릭 가능' : match.phase === 'rally' ? '○ 공을 따라 이동하세요' : match.phase === 'drop' ? '드롭 서브 · 바운드 후 클릭' : '11점 · 2점 차 승리 · 서버만 득점');
+    text(readiness, match.phase === 'ready' ? (match.server === 'player' ? t("ui.063") : t("ui.064")) :
+      mustBounce ? t("ui.065") : kitchenVolley ? t("ui.066") :
+      timing==='now' ? t("ui.067") : timing==='soon' ? t("ui.068") : match.phase === 'rally' ? t("ui.069") : match.phase === 'drop' ? t("ui.070") : t("ui.071"));
     readiness.classList.toggle('ready', timing==='now');
     const serving = match.server === 'player' && ['ready', 'drop'].includes(match.phase);
-    const aimError = serving ? match.serveLandingError(aim) : !inCourt(aim) ? '목표가 라인 밖입니다. 아웃에 주의하세요.' : undefined;
+    const aimError = serving ? match.serveLandingError(aim) : !inCourt(aim) ? t("ui.072") : undefined;
     marker.material.color.setHex(aimError ? 0xff8168 : 0xffed91);
-    text(contactHint, aimError || (reach && !mustBounce && !kitchenVolley ? contactText[quality] : serving ? '노란 서비스 코트 조준 → 바운드 후 직접 클릭' : '낮은 공은 딩크로 띄워보세요.'));
+    text(contactHint, aimError || (reach && !mustBounce && !kitchenVolley ? contactText[quality] : serving ? t("ui.073") : t("ui.074")));
     contactHint.classList.toggle('warning', Boolean(aimError));
     const showLanding = match.phase === 'rally' && match.receiver === 'player' && ball.active && ball.bounces === 0;
     landingMarker.visible = showLanding;
@@ -489,11 +494,11 @@ async function boot() {
       landingMarker.material.color.setHex(inCourt(expected) ? 0x8df4ff : 0xff8c73);
       landingMarker.scale.setScalar(reduceMotion ? 1 : 1 + Math.sin(gameTime * 7) * 0.06);
     }
-    text(landingHint, showLanding ? '◎ 큰 원: 예상 착지 · 진한 점: 공 아래 · 아웃 예상은 주황색' : 'WASD 이동 · P / Esc 일시정지');
+    text(landingHint, showLanding ? t("ui.075") : t("ui.076"));
     text(message, match.message); text(rallyLabel, String(match.hits));
     text(playerScore, String(match.score.player)); text(cpuScore, String(match.score.cpu));
     playerCard.classList.toggle('serving', match.server === 'player'); cpuCard.classList.toggle('serving', match.server === 'cpu');
-    text(serverLabel, `${SINGLES_NAMES[match.server]} 서브 · ${match.score[match.server] % 2 === 0 ? '오른쪽' : '왼쪽'}`);
+    text(serverLabel, t("ui.077",{v0:localizeText(String(SINGLES_NAMES[match.server])),v1:localizeText(String(match.score[match.server] % 2 === 0 ? '오른쪽' : '왼쪽'))}));
     serverLabel.style.color=displayColor(match.server==='player'?'ranger':'barbarian');
     serveButton.disabled = paused || match.server !== 'player' || !['ready', 'drop'].includes(match.phase);
     pauseButton.disabled = ['idle', 'over'].includes(match.phase);
@@ -521,8 +526,8 @@ async function boot() {
     if (match.phase === 'over' && !announcedGameOver && !resultNotice.active) {
       announcedGameOver = true; keys.clear(); playerVelocity.set(0, 0, 0); overlay.hidden = false;
       document.querySelector('#overlay-title')!.textContent = match.winner === 'player' ? 'YOU WIN!' : 'YOU LOSE!';
-      document.querySelector('#overlay-copy')!.textContent = `최종 점수 ${match.score.player} : ${match.score.cpu} · 새 경기에서 다시 도전하세요.`;
-      document.querySelector('#start')!.textContent = '다시 경기하기';
+      document.querySelector('#overlay-copy')!.textContent = t("ui.080",{v0:localizeText(String(match.score.player)),v1:localizeText(String(match.score.cpu))});
+      document.querySelector('#start')!.textContent = t("ui.008");
     }
     animateAthlete(player, { motion: playerMotion, incoming: match.phase === 'rally' && match.receiver === 'player' ? { ball: ball.position, volley: match.hits >= 3 && ball.bounces === 0, shot: playerShot } : undefined, contact: contactPoseTime > 0 ? playerContact : undefined, walking: moving, phase: stride, swingLeft: swingTimer, shot: playerShot, lateral: playerVelocity.x, forward: playerVelocity.z, side: swingSide, ready: reach, dt, time: gameTime, reduceMotion });
     animateAthlete(opponent, { motion: cpu.motion, incoming: match.phase === 'rally' && match.receiver === 'cpu' ? { ball: ball.position, volley: match.hits >= 3 && ball.bounces === 0, shot: cpu.position.z > -3.3 ? 'dink' : 'drive' } : undefined, contactBlend: cpu.pending ? 1 - cpu.pending.remaining / SWING_CONTACT_DELAY : 1, contact: cpu.pending ? ball.position : cpuContactTime > 0 ? cpuContact : undefined, walking: cpu.moving, phase: cpu.stride, swingLeft: cpu.swing, shot: cpu.status.includes('딩크') || cpu.volley === 'soft' ? 'dink' : 'drive', lateral: cpu.moving ? cpu.destination.x - cpu.position.x : 0, forward: cpu.moving ? -(cpu.destination.z - cpu.position.z) : 0, side: 1, ready: match.phase === 'rally' && match.receiver === 'cpu', dt, time: gameTime, reduceMotion });

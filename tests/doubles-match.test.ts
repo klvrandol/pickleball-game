@@ -1,3 +1,5 @@
+import {setLanguage} from '../src/i18n/index.ts';
+setLanguage('en');
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DoublesMatch,TEAM,MEMBERS,doublesTitle,type ActorId} from '../src/doubles-match.ts';
@@ -11,7 +13,7 @@ test('first server loses: same team partner becomes second server; next loss is 
  const m=new DoublesMatch();m.start();begin(m);lose(m,'player');begin(m);lose(m,'cpu');assert.equal(m.server,'cpu');assert.equal(m.serverId,'mage');assert.equal(m.serverNumber,2);assert.equal(m.scoreCall,'0-0-2');assert.equal(m.doublesResult?.kind,'second-server');begin(m);lose(m,'cpu');assert.equal(m.serverId,'ranger');assert.equal(m.serverNumber,1);assert.equal(m.server,'player');
 });
 test('points swap serving team court positions only; same player keeps serving; receivers update diagonally',()=>{
- const m=new DoublesMatch();m.start();for(let i=1;i<6;i++){const right=m.right.cpu;begin(m);lose(m,'cpu');assert.equal(m.score.player,i);assert.equal(m.serverId,'ranger');assert.equal(m.right.cpu,right);assert.equal(Math.sign(m.serveX),i%2===0?1:-1);assert.equal(m.designatedReceiver,i%2===0?'barbarian':'mage');assert.match(doublesTitle(m.doublesResult!),/우리 팀 득점/);}
+ const m=new DoublesMatch();m.start();for(let i=1;i<6;i++){const right=m.right.cpu;begin(m);lose(m,'cpu');assert.equal(m.score.player,i);assert.equal(m.serverId,'ranger');assert.equal(m.right.cpu,right);assert.equal(Math.sign(m.serveX),i%2===0?1:-1);assert.equal(m.designatedReceiver,i%2===0?'barbarian':'mage');assert.match(doublesTitle(m.doublesResult!),/Our team scores/);}
 });
 test('sideout starts with current right player, including odd score and both team ends',()=>{
  const m=new DoublesMatch();m.start();begin(m);lose(m,'cpu');begin(m);lose(m,'player');assert.equal(m.score.player,1);assert.equal(m.serverId,'barbarian');begin(m);lose(m,'cpu');begin(m);lose(m,'cpu');assert.equal(m.serverId,'rogue');assert.equal(m.serveX,1.5);assert.equal(m.serverNumber,1);assert.equal(m.scoreCall,'1-0-1');

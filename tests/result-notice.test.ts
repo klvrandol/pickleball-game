@@ -1,3 +1,5 @@
+import {setLanguage} from '../src/i18n/index.ts';
+setLanguage('en');
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SinglesMatch, type Side } from '../src/match.ts';
@@ -11,21 +13,21 @@ function play(server: Side, loser: Side, player = 0, cpu = 0) {
 }
 test('the four rally outcomes distinguish server points from receiver side-outs',()=>{
   const cases=[
-    ['player','cpu','POINT! - YOU 득점',{player:1,cpu:0},'point'],
-    ['cpu','player','CPU SCORES! - CPU 득점',{player:0,cpu:1},'point'],
+    ['player','cpu','POINT! - YOU scores',{player:1,cpu:0},'point'],
+    ['cpu','player','CPU SCORES! - CPU scores',{player:0,cpu:1},'point'],
     ['cpu','cpu','YOU SERVE!',{player:0,cpu:0},'sideout'],
     ['player','player','CPU SERVE!',{player:0,cpu:0},'sideout'],
   ] as const;
   for(const [server,loser,title,score,kind] of cases){
     const m=play(server,loser);assert.equal(resultTitle(m.result!),title);
     assert.equal(m.result!.kind,kind);assert.deepEqual(m.score,score);assert.deepEqual(m.result!.score,score);
-    assert.equal(resultDetail(m.result!).includes('득점 없이'),kind==='sideout');
+    assert.equal(resultDetail(m.result!).includes('no point scored'),kind==='sideout');
   }
 });
 test('match-winning results show only YOU WIN or YOU LOSE, including deuce',()=>{
   const won=play('player','cpu',10,9);assert.equal(resultTitle(won.result!),'YOU WIN!');
   const lost=play('cpu','player',9,10);assert.equal(resultTitle(lost.result!),'YOU LOSE!');
-  const deuce=play('player','cpu',10,10);assert.equal(resultTitle(deuce.result!),'POINT! - YOU 득점');
+  const deuce=play('player','cpu',10,10);assert.equal(resultTitle(deuce.result!),'POINT! - YOU scores');
   assert.equal(deuce.phase,'between');
 });
 test('provisional faults cannot announce a wrong outcome before follow-through is resolved',()=>{

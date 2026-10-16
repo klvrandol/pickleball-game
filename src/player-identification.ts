@@ -1,3 +1,4 @@
+import {onLanguageChange,localizeText} from './i18n/index.ts';
 import * as THREE from 'three';
 import type { Athlete } from './athlete.ts';
 export type PlayerRole = 'you' | 'partner' | 'cpu';
@@ -21,6 +22,7 @@ export class PlayerIdentification {
     for(const {athlete,role,label:displayText} of athletes){
       const element=document.createElement('span'),label=PLAYER_LABELS[role];
       element.className=`player-nameplate role-${role}`;element.textContent=displayText??label.text;element.style.setProperty('--role-color',label.color);
+      onLanguageChange(()=>{element.textContent=displayText?localizeText(displayText):PLAYER_LABELS[role].text;});
       element.dataset.role=role;element.dataset.athlete=athlete.style;this.layer.append(element);
       athlete.group.updateWorldMatrix(true,true);
       const head=athlete.head.getWorldPosition(new THREE.Vector3()),bounds=new THREE.Box3().setFromObject(athlete.model,true);

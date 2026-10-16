@@ -12,3 +12,5 @@ canvas{touch-action:none;cursor:crosshair}.practice-status{position:absolute;bot
 
 .player-nameplates{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;user-select:none}
 .player-nameplate{position:absolute;left:0;top:0;padding:2px 7px;border:1px solid var(--role-color);border-radius:6px;background:rgba(250,255,247,.94);color:var(--role-color);font:800 11px/15px "Segoe UI",sans-serif;letter-spacing:.3px;white-space:nowrap;box-shadow:0 1px 3px #123c3826;pointer-events:none;will-change:transform}
+/* Translation-safe labels: keep controls and score cards inside the viewport. */
+.language-setting{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}.language-setting select{max-width:140px;padding:6px;border-radius:8px;font:inherit}.guide button,.tools button,.match-overlay button{white-space:normal;overflow-wrap:anywhere}.practice-status p,.players .versus{overflow-wrap:anywhere}.player-nameplate{white-space:nowrap}.guide .settings label{line-height:1.5}

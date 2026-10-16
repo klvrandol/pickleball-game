@@ -1,3 +1,5 @@
+import {t,localizeText} from './i18n/index.ts';
+import {installI18n,languageControl} from './i18n/dom.ts';
 import {applyDisplayNames,displayColor,renderDoublesRoster} from './display-names.ts';
 import {PlayerIdentification} from './player-identification.ts';
 import {PlayerHitAssist,canPlayerContact,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
@@ -22,10 +24,13 @@ import {DEFAULT_GAME_SPEED,parseGameSpeed,simulationDelta} from './speed.ts';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const canvas=$<HTMLCanvasElement>('court');
 applyDisplayNames(document,'doubles');
-boot().catch(error=>{$('error').hidden=false;$('error').textContent=`복식 모델 또는 게임 로딩 실패: ${String(error)} · 새로고침해 주세요.`;console.error(error);});
+document.querySelector('.settings')?.append(languageControl());
+document.querySelector('#pause-overlay > div')?.append(languageControl());
+installI18n();
+boot().catch(error=>{$('error').hidden=false;$('error').textContent=t("ui.081",{v0:localizeText(String(String(error)))});console.error(error);});
 async function boot(){
-  const start=$<HTMLButtonElement>('start');start.disabled=true;start.textContent='네 선수 불러오는 중…';
-  await loadDoublesModels();start.disabled=false;start.textContent='혼합복식 시작';
+  const start=$<HTMLButtonElement>('start');start.disabled=true;start.textContent=t("ui.082");
+  await loadDoublesModels();start.disabled=false;start.textContent=t("ui.000");
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -96,7 +101,7 @@ async function boot(){
   speedSelect.onchange=()=>{speed=parseGameSpeed(speedSelect.value);try{localStorage.setItem('pickleball.speed',String(speed));}catch{}speedSelect.blur();};
   const motion=$<HTMLInputElement>('reduce-motion');motion.checked=window.matchMedia('(prefers-reduced-motion: reduce)').matches;try{const stored=localStorage.getItem('pickleball.reduceMotion');if(stored!==null)motion.checked=stored==='on';}catch{}motion.onchange=()=>{try{localStorage.setItem('pickleball.reduceMotion',motion.checked?'on':'off');}catch{}};
   const sound=$<HTMLButtonElement>('sound'),volume=$<HTMLInputElement>('volume');volume.value=String(audio.volume*100);
-  function syncSound(){sound.textContent=audio.enabled?'♪ 소리 켜짐':'♪ 소리 꺼짐';sound.setAttribute('aria-pressed',String(audio.enabled));$('volume-label').textContent=`${Math.round(audio.volume*100)}%`;}
+  function syncSound(){sound.textContent=audio.enabled?t("ui.043"):t("ui.044");sound.setAttribute('aria-pressed',String(audio.enabled));$('volume-label').textContent=`${Math.round(audio.volume*100)}%`;}
   sound.onclick=()=>{audio.setEnabled(!audio.enabled);syncSound();sound.blur();};volume.oninput=()=>{audio.setVolume(Number(volume.value)/100);syncSound();};syncSound();
   const ballRadius=BALL_RADIUS*3.25,ballMesh=new THREE.Group();
   ballMesh.add(new THREE.Mesh(new THREE.SphereGeometry(ballRadius*1.22,24,16),new THREE.MeshBasicMaterial({color:0x132b42,side:THREE.BackSide})),new THREE.Mesh(new THREE.SphereGeometry(ballRadius,24,16),new THREE.MeshBasicMaterial({color:0xffed20})));
@@ -133,11 +138,11 @@ async function boot(){
   function assistEvents(events:PlayerHitEvent[]){for(const event of events){
     if(event.kind==='start')playerMotion.begin(positions.ranger,event.point,0,event.shot,event.volley,event.delay);
     else if(event.kind==='impact'){if(match.phase==='drop'){if(inReach())launchServe();}else playerContact(event.shot);}
-    else {match.message='헛스윙 · 공이 타격 범위를 벗어났어요.';audio.play('miss');}
+    else {match.message=t("ui.047");audio.play('miss');}
   }}
   function hit(shot:Shot){if(paused||notice.active)return;audio.unlock();if(match.phase==='ready'&&match.serverId==='ranger'){dropServe();return;}if(hitCooldown>0||!['drop','rally'].includes(match.phase))return;
     hitCooldown=.3;
-    if(!hitAssist.queue(shot,playerHitContext())){playerMotion.begin(positions.ranger,ball.position,0,shot,match.phase==='rally'&&match.hits>=3&&ball.bounces===0);match.message='헛스윙 · 너무 멀거나 이미 지나간 공입니다.';audio.play('miss');return;}
+    if(!hitAssist.queue(shot,playerHitContext())){playerMotion.begin(positions.ranger,ball.position,0,shot,match.phase==='rally'&&match.hits>=3&&ball.bounces===0);match.message=t("ui.050");audio.play('miss');return;}
     assistEvents(hitAssist.advance(0,playerHitContext()));
   }
   function contactHit(id:ActorId,shot:Shot,target:THREE.Vector3){
@@ -146,7 +151,7 @@ async function boot(){
     const swing=id==='ranger'?playerMotion:agents[id].motion;swing.impact(positions[id],ball.position,TEAM[id]==='player'?0:Math.PI,volley);swing.aimAt(positions[id],target,TEAM[id]==='player'?0:Math.PI);
     const incomingSpeed=ball.velocity.length(),from=ball.position.clone();contacts[id]={point:from.clone(),time:.11};
     const reply=volley?volleyVelocity(from,target,volleyStyle(shot,incomingSpeed,from.y)):shotVelocity(from,target,shot);
-    ball.launch(from,reply);fx.emit(volley?'volley':shot,from,reply);audio.play(shot);match.message=`${NAMES[id]} ${volley?'발리':shot==='drive'?'드라이브':'딩크'} · 랠리 ${match.hits}`;
+    ball.launch(from,reply);fx.emit(volley?'volley':shot,from,reply);audio.play(shot);match.message=t("ui.083",{v0:localizeText(String(NAMES[id])),v1:localizeText(String(volley?'발리':shot==='drive'?'드라이브':'딩크')),v2:localizeText(String(match.hits))});
   }
   function playerContact(shot:Shot){if(!inReach()||match.phase!=='rally')return;const target=aim.clone(),p=positions.ranger;
     const distance=Math.hypot(ball.position.x-p.x,ball.position.z-p.z);
@@ -181,7 +186,7 @@ async function boot(){
     if(match.phase==='drop'){
       const event=ball.step(dt,true);if(event==='bounce')audio.play('bounce');
       if(match.serverId!=='ranger'&&ball.bounces===1&&ball.active&&ball.position.y>.2&&ball.position.y<.8)launchServe();
-      else if(!ball.active&&event){match.phase='ready';serveDelay=.5;match.message='서브 공을 놓쳤습니다. Space로 다시 준비하세요.';}
+      else if(!ball.active&&event){match.phase='ready';serveDelay=.5;match.message=t("ui.084");}
     }else if(match.phase==='rally'){
       const event=ball.step(dt);if(event==='net'){match.net();audio.play('net');}if(event==='bounce'||event==='out'||event==='double-bounce'){match.bounce(ball.position,ball.bounces);audio.play('bounce');}
     }
@@ -191,7 +196,7 @@ async function boot(){
     for(const id of ['rogue','barbarian','mage'] as const){
       const reply=agents[id].update(dt,match,ball,coordinator.owner,positions);
       if(match.phase==='rally'&&!agents[id].pending){const mate=match.partner(id);separateTeammates(positions[id],positions[mate],dt);positions[id].x=THREE.MathUtils.clamp(positions[id].x,-3.8,3.8);positions[id].z=endSign(TEAM[id])*THREE.MathUtils.clamp(positions[id].z*endSign(TEAM[id]),.6,7.8);}
-      if(reply&&match.phase==='rally'){if(reply.missed){match.message=`${NAMES[id]} 헛스윙!`;audio.play('miss');}else contactHit(id,reply.shot,reply.target);}
+      if(reply&&match.phase==='rally'){if(reply.missed){match.message=t("ui.085",{v0:localizeText(String(NAMES[id]))});audio.play('miss');}else contactHit(id,reply.shot,reply.target);}
       match.constrainActor(id,positions[id]);
     }
     for(const id of ids){match.updateActorFeet(id,positions[id],dt,(positions[id].z-previous[id])*endSign(TEAM[id])<-.00001);if(contacts[id])contacts[id]!.time=Math.max(0,contacts[id]!.time-dt);}
@@ -202,9 +207,9 @@ async function boot(){
     if(!paused&&notice.canPrepareServe(match.phase)){notice.clear();preparePoint();}
     accumulator+=dt;while(accumulator>=1/120){stepSimulation(1/120);accumulator-=1/120;}
     if(pointerInside&&!paused){raycaster.setFromCamera(pointer,camera);if(raycaster.ray.intersectPlane(plane,impact))aim.set(THREE.MathUtils.clamp(impact.x,-3.45,3.45),.05,THREE.MathUtils.clamp(impact.z,-7.1,-.25));}
-    if(match.doublesResult&&match.doublesResult!==handled){handled=match.doublesResult;notice.show(match.result!);$('result-title').textContent=doublesTitle(handled);$('result-title').style.color=displayColor(handled.winner?handled.winner==='player'?'ranger':'barbarian':handled.server);$('result-detail').style.color=displayColor(handled.server);$('result-detail').textContent=`${match.scoreCall} · ${NAMES[handled.server]} ${handled.serverNumber===1?'첫 번째':'두 번째'} 서버${handled.kind==='point'?' 유지':''}`;keys.clear();velocity.set(0,0,0);audio.play(handled.winner?handled.winner==='player'?'win':'lose':handled.kind==='point'?'point':'sideout');}
+    if(match.doublesResult&&match.doublesResult!==handled){handled=match.doublesResult;notice.show(match.result!);$('result-title').textContent=doublesTitle(handled);$('result-title').style.color=displayColor(handled.winner?handled.winner==='player'?'ranger':'barbarian':handled.server);$('result-detail').style.color=displayColor(handled.server);$('result-detail').textContent=t("ui.086",{v0:localizeText(String(match.scoreCall)),v1:localizeText(String(NAMES[handled.server])),v2:localizeText(String(handled.serverNumber===1?'첫 번째':'두 번째')),v3:localizeText(String(handled.kind==='point'?' 유지':''))});keys.clear();velocity.set(0,0,0);audio.play(handled.winner?handled.winner==='player'?'win':'lose':handled.kind==='point'?'point':'sideout');}
     $('result-notice').hidden=!notice.active;$('result-notice').style.opacity=String(notice.opacity);$('result-notice').classList.toggle('cpu-result',Boolean(handled&&TEAM[handled.server]==='cpu'));
-    if(match.phase==='over'&&!notice.active&&!finished){finished=true;$('match-overlay').hidden=false;$('overlay-title').textContent=match.winner==='player'?'YOU WIN!':'YOU LOSE!';$('overlay-copy').textContent=`최종 점수 ${match.score.player} : ${match.score.cpu} · 아래에서 재경기 또는 단식 모드를 선택하세요.`;start.textContent='혼합복식 다시 하기';}
+    if(match.phase==='over'&&!notice.active&&!finished){finished=true;$('match-overlay').hidden=false;$('overlay-title').textContent=match.winner==='player'?'YOU WIN!':'YOU LOSE!';$('overlay-copy').textContent=t("ui.090",{v0:localizeText(String(match.score.player)),v1:localizeText(String(match.score.cpu))});start.textContent=t("ui.009");}
     for(const id of ids){const a=actors[id],agent=id==='ranger'?null:agents[id];if(agent)a.group.position.copy(agent.position);const c=contacts[id];
       animateAthlete(a,{motion:id==='ranger'?playerMotion:agent!.motion,contact:agent?.pending?ball.position:c&&c.time>0?c.point:undefined,walking:id==='ranger'?velocity.lengthSq()>.03:agent!.moving,phase:id==='ranger'?stride:agent!.stride,swingLeft:0,shot:id==='ranger'?playerMotion.shot:agent!.motion.shot,lateral:id==='ranger'?velocity.x:agent!.destination.x-agent!.position.x,side:1,ready:match.phase==='rally',dt,time:gameTime,reduceMotion:motion.checked});}
     marker.position.copy(aim);marker.visible=!['idle','over'].includes(match.phase);marker.material.color.setHex((match.serverId==='ranger'&&['ready','drop'].includes(match.phase)?match.serveLandingError(aim):!inCourt(aim))?0xff8168:0xffed91);
@@ -214,11 +219,11 @@ async function boot(){
     landing.visible=match.phase==='rally'&&match.receiver==='player'&&ball.active&&ball.bounces===0;if(landing.visible){const p=landingPoint(ball.position,ball.velocity);landing.position.set(p.x,p.y,p.z);landing.material.color.setHex(inCourt(p)?0x8df4ff:0xff8c73);}
     const timingContext=playerHitContext(),timing=playerTiming(timingContext);
     $('player-score').textContent=String(match.score.player);$('cpu-score').textContent=String(match.score.cpu);$('rally').textContent=String(match.hits);$('message').textContent=match.message;
-    $('server-label').textContent=`${match.scoreCall} · ${NAMES[match.serverId]} 서브`; $('cpu-status').textContent=`${NAMES.barbarian} ${agents.barbarian.status} / ${NAMES.mage} ${agents.mage.status}`;
+    $('server-label').textContent=t("ui.091",{v0:localizeText(String(match.scoreCall)),v1:localizeText(String(NAMES[match.serverId]))}); $('cpu-status').textContent=`${NAMES.barbarian} ${agents.barbarian.status} / ${NAMES.mage} ${agents.mage.status}`;
     $('server-label').style.color=displayColor(match.serverId);$('cpu-status').style.color=displayColor('barbarian');$('landing-hint').style.color=displayColor('rogue');
-    $('readiness').textContent=match.phase==='ready'?match.serverId==='ranger'?'Space → 바운드 후 클릭':`${NAMES[match.serverId]} 서브 준비`:timing==='now'?'● 초록 · 지금 클릭!':timing==='soon'?'● 노랑 · 곧 타격! 미리 클릭 가능':timing==='blocked'?'바운드/키친/지정 리시버를 확인하세요':`○ ${coordinator.owner?NAMES[coordinator.owner]+' 공 처리':'서브 준비'}`;
-    if(match.phase==='rally'&&match.hits===1){$('contact-hint').textContent=`지정 리시버: ${NAMES[match.designatedReceiver]} · 반드시 바운드 후 리턴`;$('contact-hint').dataset.roster='';$('contact-hint').style.color=displayColor(match.designatedReceiver);}else{$('contact-hint').style.color='';renderDoublesRoster($('contact-hint'));}
-    $('landing-hint').textContent=`${NAMES.rogue} ${agents.rogue.status} · WASD / 마우스 / P 일시정지`;
+    $('readiness').textContent=match.phase==='ready'?match.serverId==='ranger'?t("ui.092"):t("ui.093",{v0:localizeText(String(NAMES[match.serverId]))}):timing==='now'?t("ui.067"):timing==='soon'?t("ui.068"):timing==='blocked'?t("ui.094"):`○ ${coordinator.owner?NAMES[coordinator.owner]+' '+t("ui.158"):t("ui.062")}`;
+    if(match.phase==='rally'&&match.hits===1){$('contact-hint').textContent=t("ui.095",{v0:localizeText(String(NAMES[match.designatedReceiver]))});$('contact-hint').dataset.roster='';$('contact-hint').style.color=displayColor(match.designatedReceiver);}else{$('contact-hint').style.color='';renderDoublesRoster($('contact-hint'));}
+    $('landing-hint').textContent=t("ui.096",{v0:localizeText(String(NAMES.rogue)),v1:localizeText(String(agents.rogue.status))});
     $<HTMLButtonElement>('serve').disabled=paused||match.serverId!=='ranger'||!['ready','drop'].includes(match.phase);$<HTMLButtonElement>('pause').disabled=['idle','over'].includes(match.phase);
     $('player-card').classList.toggle('serving',match.server==='player');$('cpu-card').classList.toggle('serving',match.server==='cpu');
     desiredCamera.set(positions.ranger.x*.23+1.8,11.4,15.9+positions.ranger.z*.26);camera.position.lerp(desiredCamera,1-Math.exp(-3*realDt));camera.lookAt(lookAt);locator.quaternion.copy(camera.quaternion);timingVisual.update(timing,timingContext,player.paddle,camera,paused||document.hidden,canvas.clientHeight);fx.update(paused?0:realDt,camera,motion.checked);identification.update(camera,canvas,!['idle','over'].includes(match.phase));renderer.render(scene,camera);

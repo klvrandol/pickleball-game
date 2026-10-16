@@ -1,18 +1,18 @@
+import {t} from './i18n/index.ts';
 import {SINGLES_NAMES} from './display-names.ts';
 import type { Phase, RallyResult } from './match.ts';
 
 export const RESULT_NOTICE_SECONDS = 2;
 const FADE_SECONDS = 0.35;
 export function resultTitle(result: RallyResult): string {
-  if (result.matchWinner) return result.matchWinner === 'player' ? 'YOU WIN!' : 'YOU LOSE!';
-  if (result.kind === 'point') return result.side === 'player' ? `POINT! - ${SINGLES_NAMES.player} 득점` : 'CPU SCORES! - CPU 득점';
-  return result.side === 'player' ? `${SINGLES_NAMES.player} SERVE!` : 'CPU SERVE!';
+  if(result.matchWinner)return t(result.matchWinner==='player'?'result.win':'result.lose');
+  if(result.kind==='point')return t(result.side==='player'?'result.youPoint':'result.cpuPoint',{name:SINGLES_NAMES.player});
+  return t(result.side==='player'?'result.youServe':'result.cpuServe');
 }
-export function resultDetail(result: RallyResult): string {
-  const score = `${result.score.player} : ${result.score.cpu}`;
-  if (result.matchWinner) return `최종 점수 ${score} · ${result.matchWinner === 'player' ? `${SINGLES_NAMES.player} 승리` : 'CPU 승리'}`;
-  const who = SINGLES_NAMES[result.side];
-  return result.kind === 'point' ? `${score} · ${who} 서브 유지` : `${score} · 득점 없이 ${who}에게 서브권 이동`;
+export function resultDetail(result:RallyResult):string {
+  const score=`${result.score.player} : ${result.score.cpu}`;
+  if(result.matchWinner)return t('result.final',{score,name:SINGLES_NAMES[result.matchWinner]});
+  return t(result.kind==='point'?'result.keep':'result.sideout',{score,name:SINGLES_NAMES[result.side]});
 }
 
 /** Real-time presentation clock, independent of the selected simulation speed. */

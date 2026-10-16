@@ -1,6 +1,6 @@
 const {chromium}=require('playwright');const assert=require('node:assert/strict');
 (async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--enable-unsafe-swiftshader']});try{
- const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const page=await browser.newPage({viewport:{width:1440,height:900},locale:'ko-KR'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  for(const mode of ['doubles','singles']){
  await page.goto('http://127.0.0.1:5173/');await page.waitForSelector('#title-root[data-ready=true]',{timeout:60000});assert.equal(await page.locator('h1').innerText(),'PICKLE COURT');await page.screenshot({path:'/tmp/pickle-court-title.png'});
  await page.locator('#open-settings').click();assert(await page.locator('dialog').isVisible());await page.selectOption('#menu-speed','0.5');await page.locator('#menu-names').uncheck();await page.locator('#menu-motion').check();await page.locator('#close-panel').click();await page.locator('#open-settings').click();assert.equal(await page.locator('#menu-speed').inputValue(),'0.5');await page.locator('#menu-names').check();await page.locator('#close-panel').click();

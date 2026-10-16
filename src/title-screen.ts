@@ -1,3 +1,4 @@
+import {installI18n,languageControl} from './i18n/dom.ts';
 import './title-screen.css';
 import {TITLE_COPY as copy} from './title-copy.ts';
 import {createTitleScene} from './title-scene.ts';
@@ -20,11 +21,13 @@ document.querySelector('#open-settings')!.addEventListener('click',()=>{
  const volume=content.querySelector<HTMLInputElement>('#menu-volume')!;volume.value=String(audio.volume*100);volume.oninput=()=>audio.setVolume(Number(volume.value)/100);
  const names=content.querySelector<HTMLInputElement>('#menu-names')!;names.checked=read('pickleball.nameplates')!=='off';names.onchange=()=>save('pickleball.nameplates',names.checked?'on':'off');
  const motion=content.querySelector<HTMLInputElement>('#menu-motion')!;motion.checked=read('pickleball.reduceMotion')===null?matchMedia('(prefers-reduced-motion: reduce)').matches:read('pickleball.reduceMotion')==='on';motion.onchange=()=>save('pickleball.reduceMotion',motion.checked?'on':'off');
+ content.prepend(languageControl());
  openPanel(copy.settings);
 });
 document.querySelector('#close-panel')!.addEventListener('click',()=>dialog.close());
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
 for(const link of root.querySelectorAll<HTMLAnchorElement>('nav a'))link.addEventListener('click',e=>{if(link.getAttribute('aria-disabled')==='true')e.preventDefault();});
+installI18n();
 async function boot(){
  const canvas=document.querySelector<HTMLCanvasElement>('#title-court')!;
  const {renderer,scene,camera}=createTitleScene(canvas);
