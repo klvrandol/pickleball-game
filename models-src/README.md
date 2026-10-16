@@ -1,5 +1,7 @@
 # Character source and license
 
+**2026-10-16 release review:** official KayKit pack terms are CC0, but the exact uploaded GLB pack/version has not been matched. The historical KayKit CC0 notes below are not file-level release sign-off. See [ASSET-LICENSE-REVIEW.md](ASSET-LICENSE-REVIEW.md) before publishing.
+
 Author: Quaternius (https://quaternius.com, https://www.patreon.com/quaternius).
 Pack: Animated Men Characters — February 2019. File: Smooth_Male_Casual.blend.
 License of this historical distribution: **CC0 1.0 Universal**. Exact included notice is preserved in [QUATERNIUS-LICENSE.txt](QUATERNIUS-LICENSE.txt).

@@ -1,3 +1,4 @@
+import { publicAssetUrl } from './asset-url.ts';
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
@@ -28,7 +29,7 @@ export function loadAthleteModel(): Promise<void> {
   if (templates.classic && templates.sd && templates.ranger && templates.barbarian) return Promise.resolve();
   return loading ??= Promise.all((['classic', 'sd', 'ranger', 'barbarian'] as const).map(async style => {
     if (templates[style]) return;
-    const response = await fetch(style === 'barbarian' ? './models/Barbarian-sports.glb' : style === 'ranger' ? './models/Ranger-sports.glb' : style === 'sd' ? SD_MODEL_URL : ATHLETE_MODEL_URL);
+    const response = await fetch(style === 'barbarian' ? publicAssetUrl('models/Barbarian-sports.glb') : style === 'ranger' ? publicAssetUrl('models/Ranger-sports.glb') : style === 'sd' ? SD_MODEL_URL : ATHLETE_MODEL_URL);
     if (!response.ok) throw new Error(`캐릭터 모델을 불러오지 못했습니다 (${response.status}).`);
     await installAthleteModel(await response.arrayBuffer(), style);
   })).then(() => {}).catch(error => { loading = null; throw error; });
@@ -44,7 +45,7 @@ export async function loadDoublesModels() {
   await loadAthleteModel();
   await Promise.all((['rogue','mage'] as const).map(async style => {
     if (templates[style]) return;
-    const response = await fetch(`./models/${style === 'rogue' ? 'Rogue' : 'Mage'}-sports.glb`);
+    const response = await fetch(publicAssetUrl(`models/${style === 'rogue' ? 'Rogue' : 'Mage'}-sports.glb`));
     if (!response.ok) throw new Error(`복식 캐릭터 로딩 실패: ${style} (${response.status})`);
     await installAthleteModel(await response.arrayBuffer(),style);
   }));
