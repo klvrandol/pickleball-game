@@ -1,3 +1,4 @@
+import {SINGLES_NAMES} from './display-names.ts';
 export type Side = 'player' | 'cpu';
 export type Phase = 'idle' | 'ready' | 'drop' | 'rally' | 'settling' | 'between' | 'over';
 export interface RallyResult {
@@ -16,7 +17,7 @@ export const LINE_HALF = 0.0254;
 const FOOT_X = 0.23, FOOT_Z = 0.20;
 export const other = (side: Side): Side => side === 'player' ? 'cpu' : 'player';
 export const endSign = (side: Side) => side === 'player' ? 1 : -1;
-export const sideName = (side: Side) => side === 'player' ? '나' : 'CPU';
+export const sideName = (side: Side) => SINGLES_NAMES[side];
 export function inKitchen(p: CourtPosition): boolean {
   return Math.abs(p.x) <= HALF_WIDTH + LINE_HALF + FOOT_X && Math.abs(p.z) <= KITCHEN + LINE_HALF + FOOT_Z;
 }

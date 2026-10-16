@@ -1,16 +1,17 @@
+import {SINGLES_NAMES} from './display-names.ts';
 import type { Phase, RallyResult } from './match.ts';
 
 export const RESULT_NOTICE_SECONDS = 2;
 const FADE_SECONDS = 0.35;
 export function resultTitle(result: RallyResult): string {
   if (result.matchWinner) return result.matchWinner === 'player' ? 'YOU WIN!' : 'YOU LOSE!';
-  if (result.kind === 'point') return result.side === 'player' ? 'POINT! - 플레이어 득점' : 'CPU SCORES! - CPU 득점';
-  return result.side === 'player' ? 'YOUR SERVE!' : 'CPU SERVE!';
+  if (result.kind === 'point') return result.side === 'player' ? `POINT! - ${SINGLES_NAMES.player} 득점` : 'CPU SCORES! - CPU 득점';
+  return result.side === 'player' ? `${SINGLES_NAMES.player} SERVE!` : 'CPU SERVE!';
 }
 export function resultDetail(result: RallyResult): string {
   const score = `${result.score.player} : ${result.score.cpu}`;
-  if (result.matchWinner) return `최종 점수 ${score} · ${result.matchWinner === 'player' ? '플레이어 승리' : 'CPU 승리'}`;
-  const who = result.side === 'player' ? '플레이어' : 'CPU';
+  if (result.matchWinner) return `최종 점수 ${score} · ${result.matchWinner === 'player' ? `${SINGLES_NAMES.player} 승리` : 'CPU 승리'}`;
+  const who = SINGLES_NAMES[result.side];
   return result.kind === 'point' ? `${score} · ${who} 서브 유지` : `${score} · 득점 없이 ${who}에게 서브권 이동`;
 }
 

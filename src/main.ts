@@ -1,3 +1,4 @@
+import {applyDisplayNames,displayColor,SINGLES_NAMES} from './display-names.ts';
 import {PlayerIdentification} from './player-identification.ts';
 import {PlayerHitAssist,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
 import {PlayerTimingVisual} from './player-timing-visual.ts';
@@ -19,6 +20,7 @@ import { SinglesMatch, endSign, inKitchen, inCourt, type RallyResult } from './m
 import { PracticeBall, BALL_RADIUS, launchVelocity, shotVelocity, type Shot } from './ball';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#court')!;
+applyDisplayNames(document,'singles');
 boot().catch(error => {
   document.querySelector<HTMLElement>('#error')!.hidden = false;
   document.querySelector<HTMLElement>('#error')!.textContent = '게임 또는 캐릭터를 불러오지 못했습니다. 새로고침해 주세요.';
@@ -490,7 +492,8 @@ async function boot() {
     text(message, match.message); text(rallyLabel, String(match.hits));
     text(playerScore, String(match.score.player)); text(cpuScore, String(match.score.cpu));
     playerCard.classList.toggle('serving', match.server === 'player'); cpuCard.classList.toggle('serving', match.server === 'cpu');
-    text(serverLabel, `${match.server === 'player' ? '나' : 'CPU'} 서브 · ${match.score[match.server] % 2 === 0 ? '오른쪽' : '왼쪽'}`);
+    text(serverLabel, `${SINGLES_NAMES[match.server]} 서브 · ${match.score[match.server] % 2 === 0 ? '오른쪽' : '왼쪽'}`);
+    serverLabel.style.color=displayColor(match.server==='player'?'ranger':'barbarian');
     serveButton.disabled = paused || match.server !== 'player' || !['ready', 'drop'].includes(match.phase);
     pauseButton.disabled = ['idle', 'over'].includes(match.phase);
     if (match.phase !== lastPhase) {
@@ -501,6 +504,7 @@ async function boot() {
       handledResult = match.result;
       resultNotice.show(match.result);
       text(resultHeading, resultTitle(match.result)); text(resultCopy, resultDetail(match.result));
+      resultCopy.style.color=displayColor(match.result.side==='player'?'ranger':'barbarian');
       resultPanel.classList.toggle('cpu-result', match.result.side === 'cpu');
       keys.clear(); playerVelocity.set(0, 0, 0); toastTime = 0;
       if (match.result.kind === 'point' && !reduceMotion) {

@@ -11,9 +11,9 @@ function play(server: Side, loser: Side, player = 0, cpu = 0) {
 }
 test('the four rally outcomes distinguish server points from receiver side-outs',()=>{
   const cases=[
-    ['player','cpu','POINT! - 플레이어 득점',{player:1,cpu:0},'point'],
+    ['player','cpu','POINT! - YOU 득점',{player:1,cpu:0},'point'],
     ['cpu','player','CPU SCORES! - CPU 득점',{player:0,cpu:1},'point'],
-    ['cpu','cpu','YOUR SERVE!',{player:0,cpu:0},'sideout'],
+    ['cpu','cpu','YOU SERVE!',{player:0,cpu:0},'sideout'],
     ['player','player','CPU SERVE!',{player:0,cpu:0},'sideout'],
   ] as const;
   for(const [server,loser,title,score,kind] of cases){
@@ -25,7 +25,7 @@ test('the four rally outcomes distinguish server points from receiver side-outs'
 test('match-winning results show only YOU WIN or YOU LOSE, including deuce',()=>{
   const won=play('player','cpu',10,9);assert.equal(resultTitle(won.result!),'YOU WIN!');
   const lost=play('cpu','player',9,10);assert.equal(resultTitle(lost.result!),'YOU LOSE!');
-  const deuce=play('player','cpu',10,10);assert.equal(resultTitle(deuce.result!),'POINT! - 플레이어 득점');
+  const deuce=play('player','cpu',10,10);assert.equal(resultTitle(deuce.result!),'POINT! - YOU 득점');
   assert.equal(deuce.phase,'between');
 });
 test('provisional faults cannot announce a wrong outcome before follow-through is resolved',()=>{

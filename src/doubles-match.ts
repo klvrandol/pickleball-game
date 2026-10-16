@@ -1,8 +1,9 @@
+import {DOUBLES_NAMES} from './display-names.ts';
 import { SinglesMatch, endSign, other, inKitchen, type Side, type CourtPosition } from './match.ts';
 export type ActorId = 'ranger' | 'rogue' | 'barbarian' | 'mage';
 export const TEAM: Record<ActorId, Side> = {ranger:'player',rogue:'player',barbarian:'cpu',mage:'cpu'};
 export const MEMBERS: Record<Side, readonly ActorId[]> = {player:['ranger','rogue'],cpu:['barbarian','mage']};
-export const NAMES: Record<ActorId,string> = {ranger:'Ranger',rogue:'Rogue',barbarian:'Barbarian',mage:'Mage'};
+export const NAMES: Record<ActorId,string> = DOUBLES_NAMES;
 export interface DoublesResult {
   kind:'point'|'second-server'|'sideout'; side:Side; score:{player:number;cpu:number};
   server:ActorId; serverNumber:1|2; winner:Side|null;
@@ -35,9 +36,12 @@ export class DoublesMatch extends SinglesMatch {
     return {x,z:sign*(id===this.serverId?7.3:team===this.server?7.1:5.8)};
   }
   constrainActor(id:ActorId,p:CourtPosition,v?:{x:number;z:number}) {return id===this.serverId?this.constrainServeMovement(TEAM[id],p,v):false;}
+  drop(){const accepted=super.drop();if(accepted)this.message=`${NAMES[this.serverId]} 드롭 서브 · ${this.serverId==='ranger'?'바운드 후 클릭하세요.':'AI가 자동으로 서브합니다.'}`;return accepted;}
   serveActor(id:ActorId,feet:CourtPosition):boolean {
     if(id!==this.serverId){this.fault(TEAM[id],'잘못된 서버입니다.');return false;}
-    return super.serve(TEAM[id],feet);
+    const accepted=super.serve(TEAM[id],feet);
+    if(accepted)this.message=`${NAMES[id]} 서브! 지정 리시버는 ${NAMES[this.designatedReceiver]}입니다.`;
+    return accepted;
   }
   hitActor(id:ActorId,feet:CourtPosition,bounces:number):boolean {
     const team=TEAM[id];
@@ -48,7 +52,7 @@ export class DoublesMatch extends SinglesMatch {
     // The inherited rule engine validates turns and mandatory bounces. Individual
     // momentum watches live here, so a partner's feet cannot trigger a false fault.
     const accepted=super.hit(team,feet,1);
-    if(accepted&&bounces===0){this.volleyWatch[id]=.6;this.message=`${NAMES[id]} 발리 · 랠리 ${this.hits}`;}
+    if(accepted){if(bounces===0)this.volleyWatch[id]=.6;this.message=`${NAMES[id]} ${bounces===0?'발리':'타격'} · 랠리 ${this.hits}`;}
     return accepted;
   }
   updateActorFeet(id:ActorId,p:CourtPosition,dt:number,advancing:boolean) {
@@ -61,6 +65,7 @@ export class DoublesMatch extends SinglesMatch {
     this.volleyWatch[id]!-=dt;
     if(this.volleyWatch[id]!<=0&&!advancing&&p.grounded!==false)delete this.volleyWatch[id];
   }
+  fault(loser:Side,reason:string){super.fault(loser,reason);if(this.phase==='settling')this.message=`${loser==='player'?'우리 팀':'상대 팀'} 폴트 · ${reason}`;}
   tick(dt:number) {
     const oldServer=this.server,oldNumber=this.serverNumber;
     super.tick(Object.keys(this.volleyWatch).length?0:dt);
@@ -79,7 +84,7 @@ export class DoublesMatch extends SinglesMatch {
 }
 export function doublesTitle(r:DoublesResult):string {
   if(r.winner)return r.winner==='player'?'YOU WIN! · 우리 팀 승리':'YOU LOSE! · 상대 팀 승리';
-  if(r.kind==='point')return r.side==='player'?'POINT! · 우리 팀 득점':'CPU SCORES! · 상대 팀 득점';
+  if(r.kind==='point')return r.side==='player'?'POINT! · 우리 팀 득점':'POINT! · 상대 팀 득점';
   const team=TEAM[r.server]==='player'?'우리 팀':'상대 팀';
   return `${r.kind==='sideout'?'서브권 전환 · ':''}${team} ${r.serverNumber===1?'첫 번째':'두 번째'} 서버`;
 }

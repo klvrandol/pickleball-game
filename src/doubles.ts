@@ -1,3 +1,4 @@
+import {applyDisplayNames,displayColor,renderDoublesRoster} from './display-names.ts';
 import {PlayerIdentification} from './player-identification.ts';
 import {PlayerHitAssist,canPlayerContact,canAttemptPlayerHit,playerTiming,type PlayerHitContext,type PlayerHitEvent} from './player-hit-assist.ts';
 import {PlayerTimingVisual} from './player-timing-visual.ts';
@@ -20,6 +21,7 @@ import {landingPoint} from './feedback.ts';
 import {DEFAULT_GAME_SPEED,parseGameSpeed,simulationDelta} from './speed.ts';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const canvas=$<HTMLCanvasElement>('court');
+applyDisplayNames(document,'doubles');
 boot().catch(error=>{$('error').hidden=false;$('error').textContent=`복식 모델 또는 게임 로딩 실패: ${String(error)} · 새로고침해 주세요.`;console.error(error);});
 async function boot(){
   const start=$<HTMLButtonElement>('start');start.disabled=true;start.textContent='네 선수 불러오는 중…';
@@ -79,7 +81,7 @@ async function boot(){
   const actors={} as Record<ActorId,Athlete>;
   const agents={} as Record<Exclude<ActorId,'ranger'>,DoublesAgent>;
   for(const id of ids){const team=TEAM[id];actors[id]=createAthlete(team,endSign(team)*5,team==='player'?0:Math.PI,id);scene.add(actors[id].group);if(id!=='ranger')agents[id]=new DoublesAgent(id);}
-  const identification=new PlayerIdentification(canvas,ids.map(id=>({athlete:actors[id],role:id==='ranger'?'you':id==='rogue'?'partner':'cpu'})),document.querySelector<HTMLInputElement>('#show-nameplates')!);
+  const identification=new PlayerIdentification(canvas,ids.map(id=>({athlete:actors[id],role:id==='ranger'?'you':id==='rogue'?'partner':'cpu',label:NAMES[id]})),document.querySelector<HTMLInputElement>('#show-nameplates')!);
   const player=actors.ranger,match=new DoublesMatch(),ball=new PracticeBall(),coordinator=new TeamCoordinator();
   const positions=Object.fromEntries(ids.map(id=>[id,id==='ranger'?player.group.position:agents[id].position])) as Record<ActorId,THREE.Vector3>;
   for(const id of ids){const p=match.startPosition(id);positions[id].set(p.x,.045,p.z);if(id!=='ranger')agents[id].reset(positions[id]);}
@@ -199,7 +201,7 @@ async function boot(){
     if(!paused&&notice.canPrepareServe(match.phase)){notice.clear();preparePoint();}
     accumulator+=dt;while(accumulator>=1/120){stepSimulation(1/120);accumulator-=1/120;}
     if(pointerInside&&!paused){raycaster.setFromCamera(pointer,camera);if(raycaster.ray.intersectPlane(plane,impact))aim.set(THREE.MathUtils.clamp(impact.x,-3.45,3.45),.05,THREE.MathUtils.clamp(impact.z,-7.1,-.25));}
-    if(match.doublesResult&&match.doublesResult!==handled){handled=match.doublesResult;notice.show(match.result!);$('result-title').textContent=doublesTitle(handled);$('result-detail').textContent=`${match.scoreCall} · ${NAMES[handled.server]} ${handled.serverNumber===1?'첫 번째':'두 번째'} 서버${handled.kind==='point'?' 유지':''}`;keys.clear();velocity.set(0,0,0);audio.play(handled.winner?handled.winner==='player'?'win':'lose':handled.kind==='point'?'point':'sideout');}
+    if(match.doublesResult&&match.doublesResult!==handled){handled=match.doublesResult;notice.show(match.result!);$('result-title').textContent=doublesTitle(handled);$('result-title').style.color=displayColor(handled.winner?handled.winner==='player'?'ranger':'barbarian':handled.server);$('result-detail').style.color=displayColor(handled.server);$('result-detail').textContent=`${match.scoreCall} · ${NAMES[handled.server]} ${handled.serverNumber===1?'첫 번째':'두 번째'} 서버${handled.kind==='point'?' 유지':''}`;keys.clear();velocity.set(0,0,0);audio.play(handled.winner?handled.winner==='player'?'win':'lose':handled.kind==='point'?'point':'sideout');}
     $('result-notice').hidden=!notice.active;$('result-notice').style.opacity=String(notice.opacity);$('result-notice').classList.toggle('cpu-result',Boolean(handled&&TEAM[handled.server]==='cpu'));
     if(match.phase==='over'&&!notice.active&&!finished){finished=true;$('match-overlay').hidden=false;$('overlay-title').textContent=match.winner==='player'?'YOU WIN!':'YOU LOSE!';$('overlay-copy').textContent=`최종 점수 ${match.score.player} : ${match.score.cpu} · 아래에서 재경기 또는 단식 모드를 선택하세요.`;start.textContent='혼합복식 다시 하기';}
     for(const id of ids){const a=actors[id],agent=id==='ranger'?null:agents[id];if(agent)a.group.position.copy(agent.position);const c=contacts[id];
@@ -211,10 +213,11 @@ async function boot(){
     landing.visible=match.phase==='rally'&&match.receiver==='player'&&ball.active&&ball.bounces===0;if(landing.visible){const p=landingPoint(ball.position,ball.velocity);landing.position.set(p.x,p.y,p.z);landing.material.color.setHex(inCourt(p)?0x8df4ff:0xff8c73);}
     const timingContext=playerHitContext(),timing=playerTiming(timingContext);
     $('player-score').textContent=String(match.score.player);$('cpu-score').textContent=String(match.score.cpu);$('rally').textContent=String(match.hits);$('message').textContent=match.message;
-    $('server-label').textContent=`${match.scoreCall} · ${NAMES[match.serverId]} 서브`; $('cpu-status').textContent=`Barbarian ${agents.barbarian.status} / Mage ${agents.mage.status}`;
-    $('readiness').textContent=match.phase==='ready'?match.serverId==='ranger'?'Space → 바운드 후 클릭':'AI 서버 준비':timing==='now'?'● 초록 · 지금 클릭!':timing==='soon'?'● 노랑 · 곧 타격! 미리 클릭 가능':timing==='blocked'?'바운드/키친/지정 리시버를 확인하세요':`○ ${coordinator.owner?NAMES[coordinator.owner]+' 공 처리':'서브 준비'}`;
-    $('contact-hint').textContent=match.phase==='rally'&&match.hits===1?`지정 리시버: ${NAMES[match.designatedReceiver]} · 반드시 바운드 후 리턴`:`우리 팀: Ranger + Rogue · 상대: Barbarian + Mage`;
-    $('landing-hint').textContent=`Rogue ${agents.rogue.status} · WASD / 마우스 / P 일시정지`;
+    $('server-label').textContent=`${match.scoreCall} · ${NAMES[match.serverId]} 서브`; $('cpu-status').textContent=`${NAMES.barbarian} ${agents.barbarian.status} / ${NAMES.mage} ${agents.mage.status}`;
+    $('server-label').style.color=displayColor(match.serverId);$('cpu-status').style.color=displayColor('barbarian');$('landing-hint').style.color=displayColor('rogue');
+    $('readiness').textContent=match.phase==='ready'?match.serverId==='ranger'?'Space → 바운드 후 클릭':`${NAMES[match.serverId]} 서브 준비`:timing==='now'?'● 초록 · 지금 클릭!':timing==='soon'?'● 노랑 · 곧 타격! 미리 클릭 가능':timing==='blocked'?'바운드/키친/지정 리시버를 확인하세요':`○ ${coordinator.owner?NAMES[coordinator.owner]+' 공 처리':'서브 준비'}`;
+    if(match.phase==='rally'&&match.hits===1){$('contact-hint').textContent=`지정 리시버: ${NAMES[match.designatedReceiver]} · 반드시 바운드 후 리턴`;$('contact-hint').dataset.roster='';$('contact-hint').style.color=displayColor(match.designatedReceiver);}else{$('contact-hint').style.color='';renderDoublesRoster($('contact-hint'));}
+    $('landing-hint').textContent=`${NAMES.rogue} ${agents.rogue.status} · WASD / 마우스 / P 일시정지`;
     $<HTMLButtonElement>('serve').disabled=paused||match.serverId!=='ranger'||!['ready','drop'].includes(match.phase);$<HTMLButtonElement>('pause').disabled=['idle','over'].includes(match.phase);
     $('player-card').classList.toggle('serving',match.server==='player');$('cpu-card').classList.toggle('serving',match.server==='cpu');
     desiredCamera.set(positions.ranger.x*.23+1.8,11.4,15.9+positions.ranger.z*.26);camera.position.lerp(desiredCamera,1-Math.exp(-3*realDt));camera.lookAt(lookAt);locator.quaternion.copy(camera.quaternion);timingVisual.update(timing,timingContext,player.paddle,camera,paused||document.hidden,canvas.clientHeight);fx.update(paused?0:realDt,camera,motion.checked);identification.update(camera,canvas,!['idle','over'].includes(match.phase));renderer.render(scene,camera);
