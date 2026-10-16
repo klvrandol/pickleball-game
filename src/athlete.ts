@@ -28,12 +28,17 @@ function paddle(team: AthleteTeam) {
   shape.lineTo(-0.145, 0.11); shape.quadraticCurveTo(-0.145, 0.19, -0.065, 0.19);
   shape.lineTo(0.065, 0.19); shape.quadraticCurveTo(0.145, 0.19, 0.145, 0.11);
   shape.lineTo(0.145, -0.10); shape.quadraticCurveTo(0.145, -0.18, 0.065, -0.18); shape.closePath();
-  const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.018, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.004, bevelSegments: 1, steps: 1, curveSegments: 5 }), new THREE.MeshStandardMaterial({ color: 0x192d38, roughness: 0.75 }));
+  const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.018, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.004, bevelSegments: 1, steps: 1, curveSegments: 5 }), new THREE.MeshStandardMaterial({ color: team === 'cpu' ? 0xfff0d7 : 0x192d38, roughness: 0.75 }));
   blade.position.y = -0.34; group.add(blade);
+  if (team === 'cpu') {
+    const edge = new THREE.Mesh(blade.geometry, new THREE.MeshStandardMaterial({ color: 0x532039, roughness: .8 }));
+    edge.name='paddle-contrast-edge';edge.position.set(0,-.34,-.004);edge.scale.set(1.12,1.10,.85);group.add(edge);
+  }
   const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.027, 0.18, 10), new THREE.MeshStandardMaterial({ color: 0x15191c })); grip.position.y = -0.085; group.add(grip);
   for (const y of [-0.28, -0.38]) {
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.018, 0.004), new THREE.MeshStandardMaterial({ color: y === -0.28 ? 0xffffff : team === 'player' ? 0x4ca6ff : 0xff6a73 }));
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.018, 0.004), new THREE.MeshStandardMaterial({ color: team === 'cpu' ? y === -.28 ? 0x8f2139 : 0xe74c55 : y === -.28 ? 0xffffff : 0x4ca6ff }));
     stripe.position.set(0, y, -0.012); group.add(stripe);
+    if(team === 'cpu'){const front=stripe.clone();front.position.z=.029;group.add(front);}
   }
   group.traverse(o => { if (o instanceof THREE.Mesh) o.castShadow = true; });
   return group;

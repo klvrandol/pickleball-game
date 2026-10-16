@@ -30,7 +30,9 @@ export function createRanger(team: AthleteTeam, z: number, facing: number, paddl
   paddle.position.copy(slot.position);
   paddle.rotation.z=Math.PI;
   group.updateWorldMatrix(true,true);
-  paddle.scale.setScalar(RANGER_DISPLAY_SCALE/wrists[1].getWorldScale(new THREE.Vector3()).x);
+  const handScale=wrists[1].getWorldScale(new THREE.Vector3()).x;
+  paddle.scale.setScalar(RANGER_DISPLAY_SCALE*(team === 'cpu' ? 1.15 : 1)/handScale);
+  if(team === 'cpu')paddle.position.z-=.025/handScale;
   const bind:Athlete['bind']=new Map();
   model.traverse(o=>{if(o instanceof THREE.Bone)bind.set(o,{position:o.position.clone(),quaternion:o.quaternion.clone()});});
   const actor:Athlete={style,team,group,model,paddle,paddleReach:.41,
@@ -43,10 +45,10 @@ export function createRanger(team: AthleteTeam, z: number, facing: number, paddl
   return actor;
 }
 /** CCD solves the real paddle face through the real KayKit hand/wrist/elbow chain. */
-function reach(actor:Athlete,target:THREE.Vector3,right:boolean) {
-  const end=right?actor.paddle:actor.wrists[0];
-  const face=()=>right?end.localToWorld(new THREE.Vector3(0,-.34,0)):point(end);
-  const names=right?['handr','wristr','lowerarmr','upperarmr']:['wristl','lowerarml','upperarml'];
+function reach(actor:Athlete,target:THREE.Vector3,right:boolean,gripOnly=false) {
+  const end=right?(gripOnly?actor.wrists[1]:actor.paddle):actor.wrists[0];
+  const face=()=>right&&!gripOnly?end.localToWorld(new THREE.Vector3(0,-.34,0)):point(end);
+  const names=right?(gripOnly?['wristr','lowerarmr','upperarmr']:['handr','wristr','lowerarmr','upperarmr']):['wristl','lowerarml','upperarml'];
   const joints=names.map(n=>actor.model.getObjectByName(n) as THREE.Bone);
   for(let i=0;i<90;i++) {
     for(const joint of joints) {
@@ -85,6 +87,20 @@ function contactReach(actor:Athlete,target:THREE.Vector3) {
   reach(actor,target,true);
 }
 export function rangerContact(actor:Athlete,target:THREE.Vector3) {contactReach(actor,target);}
+/** Ready-only hand orientation. Keep existing swing/impact IK untouched. */
+function cpuReadyPaddle(actor:Athlete,target:THREE.Vector3){
+  const normal=new THREE.Vector3(0,.12,-1).applyQuaternion(actor.group.quaternion).normalize();
+  const down=new THREE.Vector3(-.6,-1,0).applyQuaternion(actor.group.quaternion);
+  down.addScaledVector(normal,-down.dot(normal)).normalize();
+  const across=down.clone().cross(normal).normalize();
+  const batWorld=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(across,down,normal));
+  const handWorld=batWorld.clone().multiply(actor.paddle.quaternion.clone().invert());
+  const scale=actor.wrists[1].getWorldScale(new THREE.Vector3());
+  const offset=new THREE.Vector3(0,-.34,0).multiply(actor.paddle.scale).applyQuaternion(actor.paddle.quaternion).add(actor.paddle.position).multiply(scale).applyQuaternion(handWorld);
+  reach(actor,target.clone().sub(offset),true,true);
+  const hand=actor.wrists[1];
+  hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handWorld));
+}
 export function animateRanger(actor:Athlete,pose:AthletePose) {
   for(const [b,base]of actor.bind){b.position.copy(base.position);b.quaternion.copy(base.quaternion);}
   // Rig-specific gait; source GLB contains no animation clips. Never run Man_* clips.
@@ -109,7 +125,9 @@ export function animateRanger(actor:Athlete,pose:AthletePose) {
   }
   actor.group.updateWorldMatrix(true,true);
   const worldTarget=pose.contact??actor.group.localToWorld(target);
-  if(motion||pose.contact)contactReach(actor,worldTarget);else reach(actor,worldTarget,true);
+  if(motion||pose.contact)contactReach(actor,worldTarget);
+  else if(actor.team === 'cpu')cpuReadyPaddle(actor,actor.group.localToWorld(new THREE.Vector3(.50,1.15,-.38).multiplyScalar(RANGER_DISPLAY_SCALE)));
+  else reach(actor,worldTarget,true);
   actor.group.updateMatrixWorld(true);
   actor.model.traverse(o=>{if(o instanceof THREE.SkinnedMesh)o.skeleton.update();});
 }

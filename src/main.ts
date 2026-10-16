@@ -1,3 +1,4 @@
+import { ImpactEffects } from './impact-effects';
 import { createBallLocator } from './ball-locator.ts';
 import * as THREE from 'three';
 import { loadAthleteModel } from './athlete-model';
@@ -127,9 +128,10 @@ async function boot() {
     const mesh = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.09, 24), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }));
     mesh.visible = false; scene.add(mesh); return mesh;
   }
-  const hitRing = effectRing(0xfff4a0), bounceRing = effectRing(0xffffff);
+  const impactEffects=new ImpactEffects();scene.add(impactEffects.root);
+  const bounceRing = effectRing(0xffffff);
   bounceRing.rotation.x = -Math.PI / 2;
-  let hitPulse = 0, bouncePulse = 0;
+  let bouncePulse = 0;
   const landingMarker = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.30, 32), new THREE.MeshBasicMaterial({ color: 0x8df4ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
   landingMarker.add(new THREE.Mesh(new THREE.RingGeometry(0.30, 0.35, 32), new THREE.MeshBasicMaterial({ color: 0x132b42, side: THREE.DoubleSide, depthWrite: false })));
   landingMarker.rotation.x = -Math.PI / 2; scene.add(landingMarker);
@@ -220,8 +222,8 @@ async function boot() {
     text(toast, value); toastTime = 1.15;
     toast.classList.toggle('good', good);
   }
-  function shotEffect() {
-    hitRing.position.copy(ball.position); hitPulse = 0.18;
+  function shotEffect(shot:Shot,volley:boolean) {
+    if(!reduceMotion)impactEffects.emit(volley?'volley':shot,ball.position,ball.velocity);
   }
   function groundEffect() {
     bounceRing.position.set(ball.position.x, 0.054, ball.position.z); bouncePulse = 0.32;
@@ -245,7 +247,7 @@ async function boot() {
     playerMotion.clear();
     pendingHit = null; contactPoseTime = 0; cpuContactTime = 0;
     match.prepare(); ball.active = false; keys.clear(); cpu.reset(); playerVelocity.set(0, 0, 0);
-    resetTrail(); hitPulse = 0; bouncePulse = 0; toastTime = 0;
+    resetTrail(); impactEffects.clear(); bouncePulse = 0; toastTime = 0;
     const from = match.servePosition, to = match.serveTarget;
     if (match.server === 'player') {
       player.group.position.set(from.x, 0.045, from.z);
@@ -284,7 +286,7 @@ async function boot() {
     launchBall(ball.position.clone(), launchVelocity(ball.position, destination, Math.max(1.2, distance / 9.2)));
     const motion = server === 'player' ? playerMotion : cpu.motion;
     motion.begin(actor, ball.position, server === 'player' ? 0 : Math.PI, 'drive', false, 0);
-    audio.play('serve'); shotEffect(); feedback(server === 'player' ? 'SERVE · 대각선으로!' : 'CPU SERVE');
+    audio.play('serve'); feedback(server === 'player' ? 'SERVE · 대각선으로!' : 'CPU SERVE');
     if (server === 'player') cpu.receive(); else cpu.swing = 0.28;
   }
   function hit(shot: Shot) {
@@ -314,7 +316,7 @@ async function boot() {
     const velocity = volley ? volleyVelocity(ball.position, target, volleyStyle(shot, ball.velocity.length(), ball.position.y)) : shotVelocity(ball.position, target, shot);
     launchBall(ball.position.clone(), velocity); cpu.receive();
     const quality = contactQuality(distance, ball.position.y);
-    audio.play(shot); shotEffect(); feedback(`${volley ? (shot === 'drive' ? 'VOLLEY' : 'SOFT VOLLEY') : shot === 'drive' ? 'DRIVE' : 'DINK'} · ${contactText[quality]}`, quality === 'sweet');
+    audio.play(shot); shotEffect(shot,volley); feedback(`${volley ? (shot === 'drive' ? 'VOLLEY' : 'SOFT VOLLEY') : shot === 'drive' ? 'DRIVE' : 'DINK'} · ${contactText[quality]}`, quality === 'sweet');
     match.message = volley ? (shot === 'drive' ? '발리! 공중에서 빠르게 받아쳤습니다.' : '부드러운 발리! 짧은 코스를 조준하세요.') : shot === 'drive' ? '드라이브! 빠르고 낮게 보냅니다.' : '딩크! 상대 키친에 짧게 보내보세요.';
   }
   canvas.addEventListener('pointerdown', event => {
@@ -423,7 +425,7 @@ async function boot() {
           else if (match.hit('cpu', cpu.position, ball.bounces)) {
             cpuContact.copy(ball.position); cpuContactTime = 0.11;
             launchBall(ball.position.clone(), reply.volley ? volleyVelocity(ball.position, reply.target, reply.volley) : shotVelocity(ball.position, reply.target, reply.shot));
-            audio.play(reply.shot); shotEffect();
+            audio.play(reply.shot); shotEffect(reply.shot,Boolean(reply.volley));
             match.message = `CPU ${reply.volley ? '발리' : reply.shot === 'drive' ? '드라이브' : '딩크'}! 직접 받아치세요.`;
           }
         }
@@ -517,14 +519,13 @@ async function boot() {
       trailGeometry.attributes.position.needsUpdate = true;
     }
     trail.visible = !reduceMotion && ball.active && match.phase === 'rally';
-    hitPulse = Math.max(0, hitPulse - dt); bouncePulse = Math.max(0, bouncePulse - dt);
-    hitRing.visible = !reduceMotion && hitPulse > 0; hitRing.quaternion.copy(camera.quaternion);
-    hitRing.scale.setScalar(1 + (1 - hitPulse / 0.18) * 4); hitRing.material.opacity = hitPulse / 0.18;
+    bouncePulse = Math.max(0, bouncePulse - dt);
     bounceRing.visible = !reduceMotion && bouncePulse > 0;
     bounceRing.scale.setScalar(1 + (1 - bouncePulse / 0.32) * 5); bounceRing.material.opacity = bouncePulse / 0.32;
     desiredCamera.set(player.group.position.x * 0.23 + 1.8, cameraHeight, cameraDistance + player.group.position.z * 0.26);
     camera.position.lerp(desiredCamera, 1 - Math.exp(-3 * realDt)); camera.lookAt(lookAt);
     ballLocator.quaternion.copy(camera.quaternion);
+    impactEffects.update(realDt,camera,reduceMotion);
     renderer.render(scene, camera);
   });
 }

@@ -21,7 +21,7 @@ await installAthleteModel(data.buffer.slice(data.byteOffset,data.byteOffset+data
 test('Barbarian CPU keeps court root, KayKit rig, right-hand paddle and Ranger-sized sports silhouette',async()=>{
  const cpu=createAthlete('cpu',-5,Math.PI,'barbarian');
  assert.deepEqual(cpu.group.position.toArray(),[0,.045,-5]);assert.deepEqual(cpu.group.scale.toArray(),[1,1,1]);
- assert.equal(cpu.paddle.parent!.name,'handr');assert.ok(Math.abs(cpu.paddle.getWorldScale(new Vector3()).x-.65)<1e-5);
+ assert.equal(cpu.paddle.parent!.name,'handr');assert.ok(Math.abs(cpu.paddle.getWorldScale(new Vector3()).x-.65*1.15)<1e-5);
  const bounds=new Box3().setFromObject(cpu.model,true);assert.ok(Math.abs(bounds.min.y-.045)<.015);assert.ok(Math.abs(bounds.max.y-bounds.min.y-1.17)<.02);
  let skin:SkinnedMesh|undefined;cpu.model.traverse(o=>{if(o instanceof SkinnedMesh)skin=o;});assert.equal(skin!.skeleton.bones.length,23);
  assert.ok(cpu.model.getObjectByName('Barbarian_Head'));assert.ok(!cpu.model.getObjectByName('Barbarian_BearHat'));assert.ok(!cpu.model.getObjectByName('Barbarian_Body'));
@@ -47,4 +47,14 @@ test('Barbarian sports derivative preserves original head shape and original/Kay
  const binds=(d:typeof doc,b:Buffer)=>{const skin=d.skins[0],values=accessor(d,b,skin.inverseBindMatrices,16);return Object.fromEntries(skin.joints.map((j:number,i:number)=>[d.nodes[j].name,values[i]]));};
  const oldBind=binds(original,originalBin),newBind=binds(doc,sportsBin);assert.deepEqual(Object.keys(oldBind).sort(),Object.keys(newBind).sort());
  for(const name of Object.keys(oldBind))assert.ok(oldBind[name].every((v:number,i:number)=>Math.abs(v-newBind[name][i])<1e-5),name);
+});
+test('CPU ready paddle clears the torso, presents its face forward and keeps the hand attachment/root',()=>{
+ const cpu=createAthlete('cpu',-3,Math.PI,'barbarian'),root=cpu.group.position.clone();
+ animateAthlete(cpu,{walking:false,phase:0,swingLeft:0,shot:'drive',lateral:0,side:1,ready:true,dt:0,time:0,reduceMotion:false});
+ const face=cpu.group.worldToLocal(cpu.paddle.localToWorld(new Vector3(0,-.34,0)));
+ assert.ok(face.z<-.20,`ready face ${face.toArray()}`);assert.ok(face.x>.25);assert.ok(face.y>.70);
+ const normal=new Vector3(0,0,1).applyQuaternion(cpu.paddle.getWorldQuaternion(cpu.group.quaternion.clone()));
+ assert.ok(normal.dot(new Vector3(0,.12,1).normalize())>.98);
+ assert.equal(cpu.paddle.parent!.name,'handr');assert.deepEqual(cpu.group.position.toArray(),root.toArray());
+ assert.ok(cpu.paddle.getObjectByName('paddle-contrast-edge'));
 });
