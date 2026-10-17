@@ -7,7 +7,7 @@
 
 - `main`에는 PR #1을 통해 최신 단식·혼합복식·다국어 게임이 병합되어 있었지만, Pages 파일은 갱신되지 않았다.
 - `gh-pages` 루트 index.html은 이전 단식 버전, doubles-preview/index.html은 최신 PICKLE COURT 타이틀이었다.
-- 실제 배포는 `gh-pages`를 소스로 하는 GitHub 관리 워크플로 `pages build and deployment` (`dynamic/pages/pages-build-deployment`)였다. 이 설정을 유지한다.
+- 최근 성공한 배포는 `gh-pages`를 소스로 하는 GitHub 관리 워크플로 `pages build and deployment` (`dynamic/pages/pages-build-deployment`)였다. 이번 gh-pages 갱신 후 새 자동 실행은 관찰되지 않아 현재 설정의 API 재확인이 필요하다.
 - API 접근은 이 환경에서 403으로 제한되어, 공개 Actions 실행 메타데이터의 배포 브랜치와 워크플로 경로로 확인했다. Pages 설정 변경은 수행하지 않는다.
 
 ## 현재 구성
@@ -59,7 +59,19 @@ node tools/publish-pages.mjs --rollback pages-before-root-d4ffa0a042f2
 node tools/publish-pages.mjs --rollback pages-before-root-d4ffa0a042f2 --publish
 ```
 
-GitHub **Settings → Pages**는 기존 **Deploy from a branch → gh-pages → /(root)**를 유지한다. **GitHub Actions** 소스로 전환할 필요가 없다. 저장소는 이미 Public이다.
+## 자동 실행이 생성되지 않을 때의 수동 배포
+
+이번 작업에서 gh-pages 루트 갱신과 원격 백업은 완료했으나 새 Actions 실행이 생성되지 않았고, 이 클라우드의 GitHub API는 읽기/빌드 요청 모두 403으로 차단되었다. 기존 성공 실행을 새 배포의 성공으로 보고하면 안 된다.
+
+소유자가 로그인한 GitHub에서 다음 작업을 한 번 실행한다:
+
+1. https://github.com/klvrandol/pickleball-game/actions/workflows/deploy-pages.yml 열기.
+2. **Run workflow** → 브랜치 **main** → **Run workflow**.
+3. `Deploy PICKLE COURT root`의 build/deploy 두 작업이 초록색으로 끝났는지 확인.
+
+이 전용 워크플로는 main을 재빌드하고 gh-pages의 모든 기존 파일 위에 dist를 추가하여 전체 artifact를 만든다. 미리보기 폴더의 파일 내용이 그대로인지 검사하며, Pages의 게시 소스를 Actions로 맞춘 후 공식 deploy-pages로 공개한다. 기존 브랜치와 태그는 삭제하지 않는다. 저장소는 이미 Public이다.
+
+이 수동 실행이 성공한 이후에는 .github/workflows/deploy-pages.yml을 정식 배포 경로로 사용한다. tools/publish-pages.mjs는 gh-pages 배포 파일과 백업을 갱신하는 도구이며, Pages의 게시 소스가 Actions이면 그것만으로 공개 배포가 실행되지는 않는다.
 
 ## 기존 검토 사항
 
