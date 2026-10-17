@@ -16,7 +16,7 @@
 - 원본 4종과 실행용 `*-sports.glb` 4종 유지. 실행용 모델은 BASE_URL을 사용하며 텍스처는 GLB에 내장되어 있다.
 - `npm run build`의 dist 전체를 루트에 반영한다. HTML 한 개만 복사하지 않는다.
 - `tools/publish-pages.mjs`는 기존 gh-pages 트리를 바탕으로 dist 파일을 추가/갱신한다. 기존 파일은 삭제하지 않고 `doubles-preview/`의 Git 트리 해시가 완전히 동일한지 검사한다.
-- `.github/workflows/pages.yml`은 main push 시 설치·테스트·빌드·에셋 검사 및 artifact 보관만 수행한다. 실제 사이트 배포는 gh-pages push 후 GitHub 관리 Pages 워크플로가 수행한다.
+- `.github/workflows/deploy-pages.yml`은 main push 또는 수동 실행 시 설치·테스트·빌드·미리보기 보존·공식 Pages 공개 배포를 수행한다. `.github/workflows/pages.yml`은 별도 수동 빌드 검증용이다.
 - 배포 루트의 `deploy-info.json`에 소스 커밋, 이전 Pages 커밋, 보존한 preview 트리와 기본 경로를 기록한다.
 
 ## 명령
@@ -61,9 +61,9 @@ node tools/publish-pages.mjs --rollback pages-before-root-d4ffa0a042f2 --publish
 
 ## 자동 실행이 생성되지 않을 때의 수동 배포
 
-이번 작업에서 gh-pages 루트 갱신과 원격 백업은 완료했으나 새 Actions 실행이 생성되지 않았고, 이 클라우드의 GitHub API는 읽기/빌드 요청 모두 403으로 차단되었다. 기존 성공 실행을 새 배포의 성공으로 보고하면 안 된다.
+초기 gh-pages 갱신 후 새 배포 실행이 관찰되지 않았고, 이 클라우드의 GitHub API도 403으로 차단되었다. 이후 main 푸시에서 GitHub 호스팅 빌드 검증이 성공하는 것을 확인하여, main push로 공식 Pages 배포까지 실행하는 워크플로를 연결했다. 기존 과거 성공 실행과 새 배포의 성공을 구분한다.
 
-소유자가 로그인한 GitHub에서 다음 작업을 한 번 실행한다:
+main push의 자동 배포를 재시도해야 한다면 로그인한 GitHub에서 다음 작업을 실행한다:
 
 1. https://github.com/klvrandol/pickleball-game/actions/workflows/deploy-pages.yml 열기.
 2. **Run workflow** → 브랜치 **main** → **Run workflow**.
@@ -71,7 +71,7 @@ node tools/publish-pages.mjs --rollback pages-before-root-d4ffa0a042f2 --publish
 
 이 전용 워크플로는 main을 재빌드하고 gh-pages의 모든 기존 파일 위에 dist를 추가하여 전체 artifact를 만든다. 미리보기 폴더의 파일 내용이 그대로인지 검사하며, Pages의 게시 소스를 Actions로 맞춘 후 공식 deploy-pages로 공개한다. 기존 브랜치와 태그는 삭제하지 않는다. 저장소는 이미 Public이다.
 
-이 수동 실행이 성공한 이후에는 .github/workflows/deploy-pages.yml을 정식 배포 경로로 사용한다. tools/publish-pages.mjs는 gh-pages 배포 파일과 백업을 갱신하는 도구이며, Pages의 게시 소스가 Actions이면 그것만으로 공개 배포가 실행되지는 않는다.
+이 배포가 성공한 이후에는 .github/workflows/deploy-pages.yml을 정식 배포 경로로 사용한다. tools/publish-pages.mjs는 gh-pages 배포 파일과 백업을 갱신하는 도구이며, Pages의 게시 소스가 Actions이면 그것만으로 공개 배포가 실행되지는 않는다.
 
 ## 기존 검토 사항
 

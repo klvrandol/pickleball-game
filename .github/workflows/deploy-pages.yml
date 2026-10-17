@@ -1,7 +1,9 @@
 name: Deploy PICKLE COURT root
 
-# One explicit owner dispatch publishes the complete site, including the preserved preview.
+# Publish approved main updates and retain an explicit manual retry path.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

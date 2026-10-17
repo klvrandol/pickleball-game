@@ -3,8 +3,6 @@ name: Validate PICKLE COURT Pages build
 # Production currently uses GitHub's managed pages-build-deployment workflow on gh-pages.
 # Validate source here; publish deliberately with tools/publish-pages.mjs --publish.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
